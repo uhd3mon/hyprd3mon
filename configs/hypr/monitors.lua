@@ -6,13 +6,16 @@
 -- main  = the screen in front of you (bar, first workspaces)
 -- above = a second screen stacked directly above it
 -- Leave both nil on a laptop or single screen.
+--
+-- scale: 1 = native size. Try 1.25 or 1.5 if text is too small;
+-- `hyprd3mon-monitors scale N` changes every line below at once.
 
 local main  = nil   -- e.g. "DP-1"
 local above = nil   -- e.g. "DP-2"
 
 if main and above then
-    hl.monitor({ output = main,  mode = "preferred", position = "0x0",            scale = "auto" })
-    hl.monitor({ output = above, mode = "preferred", position = "auto-center-up", scale = "auto" })
+    hl.monitor({ output = main,  mode = "preferred", position = "0x0",            scale = "1" })
+    hl.monitor({ output = above, mode = "preferred", position = "auto-center-up", scale = "1" })
 
     -- Workspaces 1-5 open on the main screen, 6-10 on the one above.
     for i = 1, 10 do
@@ -21,4 +24,4 @@ if main and above then
 end
 
 -- Any other screen (a laptop panel, a TV) is placed automatically.
-hl.monitor({ output = "", mode = "preferred", position = "auto-center-up", scale = "auto" })
+hl.monitor({ output = "", mode = "preferred", position = "auto-center-up", scale = "1" })

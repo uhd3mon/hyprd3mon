@@ -286,8 +286,13 @@ menu_monitors() {
 		names+=("$n")
 		rows+=("${lines[$i]//$'\t'/   }")
 	done
-	idx="$(printf '%s\n' "Single screen (auto)" "${rows[@]}" | menu "MAIN SCREEN" -mesg "Pick the main screen, or Single")" || return 0
+	idx="$(printf '%s\n' "Scale (size of everything)" "Single screen (auto)" "${rows[@]}" | menu "MONITORS" -mesg "Change the scale, or pick the main screen")" || return 0
 	[[ $idx =~ ^[0-9]+$ ]] || return 0
+	if ((idx == 0)); then
+		menu_scale
+		return 0
+	fi
+	idx=$((idx - 1))
 	if ((idx == 0)); then
 		tool hyprd3mon-monitors single >/dev/null && notify "Monitors: single screen"
 		return 0
@@ -309,6 +314,17 @@ menu_monitors() {
 		notify "Monitors: $main main, $above above"
 	else
 		notify "Could not set monitors ($main, $above)"
+	fi
+}
+
+menu_scale() {
+	local scales=(1 1.25 1.5 1.75 2 auto) idx
+	idx="$(printf '%s\n' "${scales[@]}" | menu "SCALE" -mesg "1 = native size; bigger numbers make everything bigger")" || return 0
+	[[ $idx =~ ^[0-9]+$ ]] || return 0
+	if tool hyprd3mon-monitors scale "${scales[$idx]}" >/dev/null; then
+		notify "Scale: ${scales[$idx]}"
+	else
+		notify "Could not set scale ${scales[$idx]}"
 	fi
 }
 

@@ -61,7 +61,7 @@ local line   = unquote(palette.hypr_inactive_border)
 -- monitors.lua holds the layout (single screen or stacked pair).
 -- Fallback if it's missing: every screen auto-placed above the last.
 if not pcall(require, "monitors") then
-    hl.monitor({ output = "", mode = "preferred", position = "auto-center-up", scale = "auto" })
+    hl.monitor({ output = "", mode = "preferred", position = "auto-center-up", scale = "1" })
 end
 
 -------------------

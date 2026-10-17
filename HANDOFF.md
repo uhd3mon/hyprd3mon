@@ -33,7 +33,10 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
 - Monitors: `monitors.lua` (user-owned). Default stacks each extra
   screen above the last (`auto-center-up`); `hyprd3mon-monitors
   MAIN ABOVE` pins Kevin's two DisplayPort screens (1-5 on main,
-  6-10 above). Laptop/single screen needs nothing.
+  6-10 above). Laptop/single screen needs nothing. Scale is 1
+  by default; `hyprd3mon-monitors scale N` or Settings -> Monitors
+  -> Scale rewrites every `scale = "..."` in monitors.lua and runs
+  `hyprctl reload`.
 - Theme system: `assets/themes/{dark,light}.conf` palettes ->
   `hyprd3mon-apply-settings` -> `~/.config/hyprd3mon/generated/`
   (theme.css, theme.rasi, hyprlock-theme.conf, kitty-theme.conf,
@@ -97,11 +100,22 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
   default, so a typo can't stop the rest of the config loading.
 - The GitHub account is `uhd3mon`; the git author name
   `KevinEightSeven` is not a GitHub login.
+- Kevin's first real login (laptop, 2026-10-17): everything was
+  far too big. Cause: `scale = "auto"` on every monitor line;
+  Hyprland's auto picks a large scale on laptop panels. Default is
+  now "1". monitors.lua is user-owned, so existing installs keep
+  "auto" until `hyprd3mon-monitors scale 1` is run.
 - Network: no nm-applet; the bar's network icon opens nmtui in a
   floating kitty (class hyprd3mon-float), right-click opens
   nm-connection-editor.
 
 ## Verification observed (2026-10-17)
+
+- Scale fix: `hyprd3mon-monitors scale 1.25` on the old (auto)
+  monitors.lua changed all 3 lines; `1.3x` rejected (exit 2);
+  stubbed-rofi Settings -> Monitors -> Scale -> 1.5 wrote 1.5 to
+  all 3 lines; Single screen entry still works. Not yet seen on
+  real Hyprland.
 
 - `bash -n install.sh bin/*`, `luac -p configs/hypr/*.lua`: OK.
 - `./install.sh` dry run: exit 0; plan lists `pacman -Syu` (with

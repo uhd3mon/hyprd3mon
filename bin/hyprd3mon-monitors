@@ -3,7 +3,8 @@
 #   hyprd3mon-monitors                 list connected screens
 #   hyprd3mon-monitors MAIN ABOVE      MAIN in front, ABOVE on top of it
 #   hyprd3mon-monitors single          one screen / laptop (auto)
-# Edits ~/.config/hypr/monitors.lua; Hyprland reloads it on save.
+#   hyprd3mon-monitors scale N         size of everything: 1, 1.25, 1.5, 2 or auto
+# Edits ~/.config/hypr/monitors.lua and reloads Hyprland.
 set -euo pipefail
 
 file="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/monitors.lua"
@@ -12,20 +13,43 @@ list() {
 	hyprctl monitors -j | jq -r '.[] | "\(.name)\t\(.width)x\(.height)@\(.refreshRate|floor)\t\(.description)"'
 }
 
-set_names() {
+need_file() {
 	[[ -f $file ]] || { echo "Missing $file (run install.sh first)" >&2; exit 1; }
+}
+
+reload() {
+	[[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && hyprctl reload >/dev/null 2>&1 || true
+}
+
+set_names() {
+	need_file
 	sed -i -E \
 		-e "s|^local main  = .*|local main  = $1|" \
 		-e "s|^local above = .*|local above = $2|" "$file"
 	echo "Wrote $file"
+	reload
+}
+
+# Rewrites every scale = "..." in the file, so older monitors.lua
+# files (which had scale = "auto" inline) work too.
+set_scale() {
+	need_file
+	[[ $1 == auto || $1 =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "Bad scale: $1 (try 1, 1.25, 1.5, 2 or auto)" >&2; exit 2; }
+	sed -i -E "s|scale = \"[^\"]*\"|scale = \"$1\"|g" "$file"
+	echo "Scale $1 in $file"
+	reload
 }
 
 case "${1:-}" in
 "")     list ;;
 single) set_names "nil" "nil" ;;
--h | --help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//' ;;
+scale)
+	[[ $# -eq 2 ]] || { echo "Usage: $(basename "$0") scale N" >&2; exit 2; }
+	set_scale "$2"
+	;;
+-h | --help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' ;;
 *)
-	[[ $# -eq 2 ]] || { echo "Usage: $(basename "$0") [MAIN ABOVE | single]" >&2; exit 2; }
+	[[ $# -eq 2 ]] || { echo "Usage: $(basename "$0") [MAIN ABOVE | single | scale N]" >&2; exit 2; }
 	for m in "$1" "$2"; do
 		[[ $m =~ ^[A-Za-z0-9-]+$ ]] || { echo "Bad monitor name: $m" >&2; exit 2; }
 	done
