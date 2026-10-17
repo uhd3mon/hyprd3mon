@@ -43,3 +43,9 @@ modifications. See AGENTS.md for rules.
 - `./install.sh`: printed plan, exit 0.
 - `./install.sh --apply`: exit 1 (not implemented).
 - `./install.sh --bogus`: usage, exit 2.
+
+## Team memory
+
+<!-- workspace:memory:start -->
+- hyprland project layout (2026-10-17): /home/kevin/Workspace/hyprland, local git (fe1ed45, no remote). install.sh = Bash entry, dry-run default, --apply not implemented; configs/<app>/ -> ~/.config/<app>/; patches/<app>/ = mods to upstream apps (Hyprshot, Hyprlock...). Guides: README, AGENTS.md (rules+checks), CLAUDE.md=@AGENTS.md, HANDOFF.md. Checks: bash -n install.sh; ./install.sh --dry-run. Arch (pacman+yay). Hyprland/shellcheck not installed; old config in ~/.config/hypr not imported. (Sora, 2026-10-17)
+<!-- workspace:memory:end -->
