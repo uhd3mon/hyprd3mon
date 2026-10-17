@@ -395,7 +395,7 @@ hl.window_rule({
     center = true,
 })
 
--- Pop-up tools opened from the bar (e.g. nmtui for Wi-Fi).
+-- Floating kitty pop-ups (class hyprd3mon-float).
 hl.window_rule({
     name   = "hyprd3mon-float",
     match  = { class = "^(hyprd3mon-float)$" },

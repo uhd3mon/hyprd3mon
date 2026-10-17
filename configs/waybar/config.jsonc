@@ -77,7 +77,7 @@
     "tooltip-format-linked": "{ifname}: no IP address",
     "tooltip-format-disconnected": "Not connected",
     "tooltip-format-disabled": "Networking is off",
-    "on-click": "kitty --class hyprd3mon-float -e nmtui",
+    "on-click": "~/.local/bin/hyprd3mon-network",
     "on-click-right": "nm-connection-editor"
   },
 

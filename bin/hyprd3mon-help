@@ -18,8 +18,9 @@ settings="$HOME/.local/bin/hyprd3mon-settings"
 theme_args=()
 [[ -f $theme ]] && theme_args=(-theme "$theme")
 
-# Columns: the menu font is monospace, so space padding lines up.
-width=64          # characters per row: ~563px of a 640px window at 11pt
+# Columns: keys first, padded to the longest combo, then the label.
+# The menu font is monospace, so space padding lines up; if a row is
+# still too wide for the window, rofi cuts the label, never the keys.
 i_edit=$'\U000f03eb'   # nf-md-pencil
 
 # Quoted replacements: bash 5.2 expands a bare & to the match.
@@ -36,6 +37,9 @@ mesg=""
 
 if [[ -r $tsv ]]; then
     # Groups in first-seen order; rows keep file order inside a group.
+    # Key column width: longest combo (or "unbound"), at least 12.
+    keyw=$(awk -F'\t' 'NF >= 3 && $1 != "id" { n = length($2 == "" ? "unbound" : $2); if (n > w) w = n }
+        END { print (w > 12 ? w : 12) }' "$tsv")
     mapfile -t groups < <(awk -F'\t' 'NF >= 3 && $1 != "id" { g = ($5 == "" ? "Other" : $5); if (!seen[g]++) print g }' "$tsv")
     for group in "${groups[@]}"; do
         active+=("${#rows[@]}")
@@ -59,13 +63,8 @@ if [[ -r $tsv ]]; then
                 shown=$keys
                 style="fgalpha='65%'"
             fi
-            room=$(( width - ${#shown} - 2 ))
-            (( room < 12 )) && room=12
-            (( ${#label} > room )) && label="${label:0:room-1}…"
-            gap=$(( width - ${#label} - ${#shown} ))
-            (( gap < 2 )) && gap=2
-            pad=$(printf '%*s' "$gap" '')
-            rows+=("$(esc "$label")$pad<span $style>$(esc "$shown")</span>")
+            pad=$(printf '%*s' "$(( keyw - ${#shown} + 3 ))" '')
+            rows+=("<span $style>$(esc "$shown")</span>$pad$(esc "$label")")
         done < <(tr '\t' '\037' < "$tsv")
     done
     mesg="Bold keys are your own. Change them in Edit keybinds."
@@ -87,7 +86,7 @@ while :; do
         rofi -dmenu -i -no-custom -markup-rows -format i \
             -p "KEYBINDS" -mesg "$mesg" -selected-row "$selected" \
             "${theme_args[@]}" "${active_arg[@]}" \
-            -theme-str 'window { width: 640px; } listview { lines: 14; }')
+            -theme-str 'window { width: 760px; } listview { lines: 14; }')
     [[ $choice =~ ^[0-9]+$ ]] && (( choice < ${#rows[@]} )) || exit 0
     if (( choice == 0 )); then
         exec "$settings" keybinds

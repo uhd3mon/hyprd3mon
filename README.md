@@ -22,6 +22,10 @@ both dark and light themes.
 - **Screenshots** (Hyprshot): window, region, one monitor or all
   monitors. Each one is saved *and* copied to the clipboard, ready to
   paste into Discord or a website.
+- **Network menu**: click the bar's network icon for a Wi-Fi list
+  (click a network to join; a password box pops up), Wi-Fi on/off,
+  disconnect/forget and VPN on/off. Right-click opens the full
+  NetworkManager editor.
 - **Settings menu**: dark/light theme, accent colour, keybinds, which
   bar items to show, 12/24h clock, monitor layout.
 - **Apps**: Kitty, Nautilus (with GTK file dialogs for browsers),

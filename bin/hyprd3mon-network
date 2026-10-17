@@ -1,0 +1,371 @@
+#!/usr/bin/env bash
+# hyprd3mon-network: rofi network menu (NetworkManager via nmcli).
+# Wi-Fi on/off, nearby networks (click to connect; a password prompt
+# appears for new secured ones), disconnect/forget, VPN on/off, and
+# "Advanced settings" (nm-connection-editor) for everything else.
+#   hyprd3mon-network      open the menu (toggle: closes an open rofi)
+# Sourcing this file only defines the functions (used by tests).
+set -u
+
+theme="${XDG_CONFIG_HOME:-$HOME/.config}/rofi/menu.rasi"
+theme_args=()
+[[ -f $theme ]] && theme_args=(-theme "$theme")
+
+# Nerd Font (Material Design) icons.
+i_wifi=$'\U000f05a9'       # nf-md-wifi
+i_wifi_off=$'\U000f05aa'   # nf-md-wifi_off
+i_lock=$'\U000f033e'       # nf-md-lock
+i_check=$'\U000f012c'      # nf-md-check
+i_scan=$'\U000f0450'       # nf-md-refresh
+i_hidden=$'\U000f0901'     # nf-md-wifi_strength_alert_outline
+i_vpn=$'\U000f0582'        # nf-md-vpn
+i_ethernet=$'\U000f0200'   # nf-md-ethernet
+i_cog=$'\U000f0493'        # nf-md-cog
+i_close=$'\U000f0156'      # nf-md-close
+i_delete=$'\U000f01b4'     # nf-md-delete
+i_back=$'\U000f004d'       # nf-md-arrow_left
+SIGNAL_ICONS=($'\U000f091f' $'\U000f0922' $'\U000f0925' $'\U000f0928')
+
+notify() {
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send -a hyprd3mon "Network" "$*"
+    else
+        printf 'hyprd3mon-network: %s\n' "$*" >&2
+    fi
+}
+
+# menu PROMPT [extra rofi args...]: rows on stdin, chosen row index on
+# stdout (empty when cancelled).
+menu() {
+    local prompt=$1
+    shift
+    rofi -dmenu -i -no-custom -format i -p "$prompt" "${theme_args[@]}" "$@"
+}
+
+# ask_password SSID [MESSAGE]: rofi password prompt, password on stdout.
+ask_password() {
+    rofi -dmenu -password -p "PASSWORD" "${theme_args[@]}" \
+        -mesg "${2:-Password for $(markup_escape "$1")}" \
+        -theme-str 'listview { enabled: false; } entry { placeholder: "Password"; horizontal-align: 0; }' \
+        </dev/null
+}
+
+# ask_text PROMPT MESSAGE: free-text prompt.
+ask_text() {
+    rofi -dmenu -p "$1" "${theme_args[@]}" -mesg "$2" \
+        -theme-str 'listview { enabled: false; } entry { placeholder: ""; horizontal-align: 0; }' \
+        </dev/null
+}
+
+markup_escape() {
+    local s=$1
+    # Quoted replacements: bash 5.2 expands a bare "&" to the match.
+    s=${s//&/'&amp;'}
+    s=${s//</'&lt;'}
+    s=${s//>/'&gt;'}
+    printf '%s' "$s"
+}
+
+# nm_unescape: undo nmcli -t escaping ("\:" and "\\").
+nm_unescape() {
+    local s=$1 out="" c
+    while [[ -n $s ]]; do
+        c=${s:0:1}
+        if [[ $c == '\' && ${#s} -gt 1 ]]; then
+            out+=${s:1:1}
+            s=${s:2}
+        else
+            out+=$c
+            s=${s:1}
+        fi
+    done
+    printf '%s' "$out"
+}
+
+# pad_to N TEXT: TEXT padded with spaces to N characters (printf pads
+# bytes, which misaligns accented or CJK names).
+pad_to() {
+    local n=$(( $1 - ${#2} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s' "$2" "$n" ''
+}
+
+signal_icon() {
+    local n=$(( $1 / 25 ))
+    (( n > 3 )) && n=3
+    printf '%s' "${SIGNAL_ICONS[n]}"
+}
+
+wifi_device() {
+    nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: '$2 == "wifi" { print $1; exit }'
+}
+
+wifi_enabled() {
+    [[ $(nmcli radio wifi 2>/dev/null) == enabled ]]
+}
+
+# scan_networks [RESCAN]: fills NET_SSID/NET_SIGNAL/NET_SECURITY/NET_ACTIVE,
+# one entry per SSID (strongest access point, the connected one wins),
+# sorted connected first, then by signal.
+scan_networks() {
+    local rescan=${1:-auto} line inuse signal security ssid i found
+    NET_SSID=() NET_SIGNAL=() NET_SECURITY=() NET_ACTIVE=()
+    while IFS= read -r line; do
+        # IN-USE:SIGNAL:SECURITY:SSID - only SSID can contain ":".
+        inuse=${line%%:*}; line=${line#*:}
+        signal=${line%%:*}; line=${line#*:}
+        security=${line%%:*}; line=${line#*:}
+        ssid=$(nm_unescape "$line")
+        [[ -z $ssid ]] && continue
+        found=-1
+        for i in "${!NET_SSID[@]}"; do
+            [[ ${NET_SSID[i]} == "$ssid" ]] && { found=$i; break; }
+        done
+        if (( found < 0 )); then
+            NET_SSID+=("$ssid"); NET_SIGNAL+=("$signal")
+            NET_SECURITY+=("$security"); NET_ACTIVE+=(0)
+            found=$(( ${#NET_SSID[@]} - 1 ))
+        elif (( signal > NET_SIGNAL[found] )); then
+            NET_SIGNAL[found]=$signal
+        fi
+        [[ $inuse == '*' ]] && NET_ACTIVE[found]=1
+    done < <(nmcli -t -f IN-USE,SIGNAL,SECURITY,SSID dev wifi list --rescan "$rescan" 2>/dev/null |
+        sort -t: -k1,1r -k2,2nr)
+}
+
+# saved_wifi SSID [all]: name of a saved Wi-Fi connection for SSID
+# (every one, one per line, with "all"). Fails when there is none.
+saved_wifi() {
+    local line name found=1
+    while IFS= read -r line; do
+        # NAME:TYPE - only NAME can contain ":".
+        [[ ${line##*:} == 802-11-wireless ]] || continue
+        name=$(nm_unescape "${line%:*}")
+        # -g escapes ":" and "\" like -t does.
+        if [[ $(nm_unescape "$(nmcli -g 802-11-wireless.ssid con show id "$name" 2>/dev/null)") == "$1" ]]; then
+            [[ ${2:-} == all ]] || { printf '%s' "$name"; return 0; }
+            printf '%s\n' "$name"
+            found=0
+        fi
+    done < <(nmcli -t -f NAME,TYPE con show 2>/dev/null)
+    return $found
+}
+
+# vpn_list: fills VPN_NAME/VPN_ACTIVE (vpn and wireguard connections).
+vpn_list() {
+    local line name type active
+    VPN_NAME=() VPN_ACTIVE=()
+    while IFS= read -r line; do
+        active=${line##*:}; line=${line%:*}
+        type=${line##*:}; line=${line%:*}
+        name=$(nm_unescape "$line")
+        [[ $type == vpn || $type == wireguard ]] || continue
+        VPN_NAME+=("$name")
+        [[ $active == yes ]] && VPN_ACTIVE+=(1) || VPN_ACTIVE+=(0)
+    done < <(nmcli -t -f NAME,TYPE,ACTIVE con show 2>/dev/null)
+}
+
+# status_line: "Wi-Fi: Home", "Wired", "Not connected".
+status_line() {
+    local dev type state con parts=()
+    while IFS=: read -r dev type state con; do
+        [[ $state == connected* ]] || continue
+        con=$(nm_unescape "$con")
+        case $type in
+            wifi)     parts+=("Wi-Fi: $con") ;;
+            ethernet) parts+=("Wired: $con") ;;
+        esac
+    done < <(nmcli -t -f DEVICE,TYPE,STATE,CONNECTION dev 2>/dev/null)
+    if (( ${#parts[@]} )); then
+        local IFS=$'\n'
+        printf '%s' "${parts[*]}"
+    else
+        printf 'Not connected'
+    fi
+}
+
+is_enterprise() { [[ $1 == *802.1X* ]]; }
+is_open() { [[ -z $1 || $1 == -- || $1 == OWE ]]; }
+
+# connect_wifi SSID SECURITY [hidden]
+connect_wifi() {
+    local ssid=$1 security=$2 hidden=${3:-} saved pw err
+    if saved=$(saved_wifi "$ssid"); then
+        notify "Connecting to $ssid…"
+        if err=$(nmcli con up id "$saved" 2>&1); then
+            notify "Connected to $ssid"
+            return 0
+        fi
+        # Saved password wrong or changed: ask once and retry. Other
+        # failures (out of range, timeout, 802.1X) just report.
+        if is_open "$security" || is_enterprise "$security" || [[ $err != *[Ss]ecrets* ]]; then
+            notify "Could not connect to $ssid: ${err##*Error: }"
+            return 1
+        fi
+        pw=$(ask_password "$ssid") || return 1
+        [[ -n $pw ]] || return 1
+        if ! err=$(nmcli con modify id "$saved" wifi-sec.psk "$pw" 2>&1); then
+            notify "Could not save the password for $ssid: ${err##*Error: }"
+            return 1
+        fi
+        if err=$(nmcli con up id "$saved" 2>&1); then
+            notify "Connected to $ssid"
+        else
+            notify "Could not connect to $ssid: ${err##*Error: }"
+            return 1
+        fi
+        return 0
+    fi
+
+    if is_enterprise "$security"; then
+        notify "$ssid uses enterprise (802.1X) login: set it up in Advanced settings."
+        nm-connection-editor >/dev/null 2>&1 &
+        return 0
+    fi
+
+    local had args=(dev wifi connect "$ssid")
+    had=$(saved_wifi "$ssid" all)
+    [[ $hidden == hidden ]] && args+=(hidden yes)
+    if [[ $hidden == hidden ]]; then
+        # Unknown security: an empty password means an open network.
+        pw=$(ask_password "$ssid" "Password for $(markup_escape "$ssid") (leave empty if open)") || return 1
+        [[ -n $pw ]] && args+=(password "$pw")
+    elif ! is_open "$security"; then
+        pw=$(ask_password "$ssid") || return 1
+        [[ -n $pw ]] || return 1
+        args+=(password "$pw")
+    fi
+    notify "Connecting to $ssid…"
+    if err=$(nmcli "${args[@]}" 2>&1); then
+        notify "Connected to $ssid"
+    else
+        # A failed attempt leaves a half-made profile; drop it so the
+        # next try asks for the password again.
+        if [[ -z $had ]]; then
+            while IFS= read -r saved; do
+                [[ -n $saved ]] && nmcli con delete id "$saved" >/dev/null 2>&1
+            done < <(saved_wifi "$ssid" all)
+        fi
+        notify "Could not connect to $ssid: ${err##*Error: }"
+        return 1
+    fi
+}
+
+# network_page SSID: connected network -> Disconnect / Forget.
+network_page() {
+    local ssid=$1 dev saved choice
+    dev=$(wifi_device)
+    choice=$(printf '%s\n' "$i_close   Disconnect" "$i_delete   Forget network" "$i_back   Back" |
+        menu "WI-FI" -mesg "$(markup_escape "$ssid")" -selected-row 0 \
+            -theme-str 'listview { lines: 3; }')
+    case $choice in
+        0) nmcli dev disconnect "$dev" >/dev/null 2>&1 && notify "Disconnected from $ssid" ;;
+        1)
+            while IFS= read -r saved; do
+                [[ -n $saved ]] && nmcli con delete id "$saved" >/dev/null 2>&1
+            done < <(saved_wifi "$ssid" all)
+            notify "Forgot $ssid"
+            ;;
+        2) main_menu ;;
+    esac
+}
+
+main_menu() {
+    local rescan=${1:-auto} rows=() actions=() wdev i label pad choice err
+    wdev=$(wifi_device)
+
+    if [[ -n $wdev ]]; then
+        if wifi_enabled; then
+            rows+=("$i_wifi   Wi-Fi: on"); actions+=("wifi-off")
+            scan_networks "$rescan"
+            for i in "${!NET_SSID[@]}"; do
+                label=${NET_SSID[i]}
+                (( ${#label} > 28 )) && label="${label:0:27}…"
+                pad=$(pad_to 28 "$label")
+                rows+=("$(signal_icon "${NET_SIGNAL[i]}")   $pad $(
+                    (( NET_ACTIVE[i] )) && printf '%s' "$i_check" || printf ' ')  $(
+                    is_open "${NET_SECURITY[i]}" && printf ' ' || printf '%s' "$i_lock")")
+                actions+=("net:$i")
+            done
+            rows+=("$i_scan   Scan again"); actions+=("rescan")
+            rows+=("$i_hidden   Hidden network…"); actions+=("hidden")
+        else
+            rows+=("$i_wifi_off   Wi-Fi: off"); actions+=("wifi-on")
+        fi
+    fi
+
+    vpn_list
+    for i in "${!VPN_NAME[@]}"; do
+        rows+=("$i_vpn   $(pad_to 28 "${VPN_NAME[i]:0:28}") $(
+            (( VPN_ACTIVE[i] )) && printf 'on' || printf 'off')")
+        actions+=("vpn:$i")
+    done
+
+    rows+=("$i_cog   Advanced settings"); actions+=("editor")
+
+    choice=$(printf '%s\n' "${rows[@]}" |
+        menu "NETWORK" -mesg "$(markup_escape "$(status_line)")" \
+            -theme-str "listview { lines: $(( ${#rows[@]} < 12 ? ${#rows[@]} : 12 )); }")
+    [[ -n $choice ]] || return 0
+
+    case ${actions[choice]} in
+        wifi-on)
+            nmcli radio wifi on && notify "Wi-Fi on"
+            # The device needs a moment before it can scan.
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+                [[ $(nmcli -t -f DEVICE,STATE dev 2>/dev/null | awk -F: -v d="$wdev" '$1 == d { print $2 }') != unavailable ]] && break
+                sleep 0.5
+            done
+            sleep 1
+            main_menu yes
+            ;;
+        wifi-off)
+            nmcli radio wifi off && notify "Wi-Fi off"
+            ;;
+        rescan)
+            main_menu yes
+            ;;
+        hidden)
+            local ssid
+            ssid=$(ask_text "HIDDEN" "Network name (SSID)") || return 0
+            [[ -n $ssid ]] && connect_wifi "$ssid" "WPA2" hidden
+            ;;
+        net:*)
+            i=${actions[choice]#net:}
+            if (( NET_ACTIVE[i] )); then
+                network_page "${NET_SSID[i]}"
+            else
+                connect_wifi "${NET_SSID[i]}" "${NET_SECURITY[i]}"
+            fi
+            ;;
+        vpn:*)
+            i=${actions[choice]#vpn:}
+            if (( VPN_ACTIVE[i] )); then
+                nmcli con down id "${VPN_NAME[i]}" >/dev/null 2>&1 &&
+                    notify "${VPN_NAME[i]} off"
+            elif err=$(nmcli con up id "${VPN_NAME[i]}" 2>&1); then
+                notify "${VPN_NAME[i]} on"
+            else
+                notify "Could not start ${VPN_NAME[i]}: ${err##*Error: }"
+            fi
+            ;;
+        editor)
+            exec nm-connection-editor
+            ;;
+    esac
+}
+
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
+
+if pgrep -x rofi >/dev/null 2>&1; then
+    pkill -x rofi
+    exit 0
+fi
+
+if ! command -v nmcli >/dev/null 2>&1; then
+    notify "NetworkManager (nmcli) is not installed."
+    exit 1
+fi
+
+main_menu
+exit 0

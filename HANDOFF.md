@@ -45,8 +45,8 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
 - Bar (Waybar): full width, flush top. Username (opens launcher),
   taskbar | clock + date | network, sound, help, settings, tray,
   power. Module toggles + 12/24h clock from settings.
-- Commands in `bin/`: launcher, power (lock/logout/restart/
-  shutdown), shot (window/region/monitor/all; always saved to
+- Commands in `bin/`: launcher, network (rofi Wi-Fi/VPN menu),
+  power (lock/logout/restart/shutdown), shot (window/region/monitor/all; always saved to
   ~/Pictures/Screenshots and copied as image/png), help (keybind
   list), settings (theme, accent, keybinds, bar, monitors),
   apply-settings, monitors.
@@ -105,11 +105,44 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
   Hyprland's auto picks a large scale on laptop panels. Default is
   now "1". monitors.lua is user-owned, so existing installs keep
   "auto" until `hyprd3mon-monitors scale 1` is run.
-- Network: no nm-applet; the bar's network icon opens nmtui in a
-  floating kitty (class hyprd3mon-float), right-click opens
-  nm-connection-editor.
+- Network: no nm-applet. Kevin found nmtui (terminal) "horrible",
+  so the bar's network icon now opens `hyprd3mon-network`, a rofi
+  menu in the same glass style (Wi-Fi on/off, networks with
+  signal/lock/connected marks, password prompt, disconnect/forget,
+  hidden network, VPN/WireGuard on/off, Advanced settings).
+  Right-click still opens nm-connection-editor; 802.1X networks are
+  sent there too.
+- Keybind lists (help + Settings -> Keybinds) were cut off on the
+  laptop ("SUPER …"): rows were padded to 64 chars for a 640px
+  window, which overflowed. Now keys come first, padded to the
+  longest combo, then the label; window 760px. If rofi still cuts a
+  row, it cuts the label, not the keys.
+- `IFS=$'\t' read` merges empty fields: Settings -> Keybinds showed
+  an unbound key's default as its label and listed the TSV header as
+  a bind. It now splits on \x1f like the help menu.
+- The new network menu passes a new Wi-Fi password to
+  `nmcli dev wifi connect ... password X`, so it is briefly visible
+  in /proc/*/cmdline (same as most rofi Wi-Fi menus). Accepted for
+  a single-user desktop; `nmcli --ask` via stdin or `passwd-file`
+  would hide it but couldn't be tested without joining a network.
 
 ## Verification observed (2026-10-17)
+
+- Network menu + keybind lists (stubbed rofi/nmcli, nothing changed
+  on the real network): real `nmcli` read-only parse on this PC
+  (Dungeon5G WPA2, 2 VPNs, "Wired: Wired connection 1"); stubs:
+  new secured network -> password -> `dev wifi connect`, failed
+  connect deletes the half-made profile, saved `Caf:e` reconnects via
+  `con up`, wrong saved password re-asks + `con modify`, OWE and
+  open networks skip the password, hidden network adds `hidden yes`
+  (empty password = open), Forget deletes every profile for the SSID,
+  802.1X opens the editor, VPN up, Wi-Fi off, cancel exits 0.
+  Help + Settings -> Keybinds rows now "keys   label"; unbound shows
+  "unbound"; setting a key from that page wrote keybinds.conf.
+  Fake HOME install placed ~/.local/bin/hyprd3mon-network; dry run
+  exit 0. Nova reviewed the network menu; all findings fixed except
+  the password-in-argv one (see Lessons). Not seen on real
+  Hyprland/rofi yet.
 
 - Scale fix: `hyprd3mon-monitors scale 1.25` on the old (auto)
   monitors.lua changed all 3 lines; `1.3x` rejected (exit 2);

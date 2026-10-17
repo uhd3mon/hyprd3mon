@@ -225,12 +225,20 @@ menu_keybinds() {
 		notify "No keybind list yet ($binds_tsv). Reload Hyprland first."
 		return 0
 	fi
-	while IFS=$'\t' read -r id k label def group; do
-		[[ -n $id ]] || continue
-		ids+=("$id") keys+=("$k") labels+=("${label:-$id}") defs+=("$def")
-		rows+=("$(printf '%-34s %s' "${label:-$id}" "$k")")
-	done <"$binds_tsv"
-	idx="$(printf '%s\n' "${rows[@]}" | menu "KEYBINDS")" || return 0
+	local keyw=12 i
+	# Tabs are IFS whitespace and would merge an empty keys field, so
+	# split on \x1f instead.
+	while IFS=$'\x1f' read -r id k label def group; do
+		[[ -n $id && $id != id ]] || continue
+		ids+=("$id") keys+=("${k:-unbound}") labels+=("${label:-$id}") defs+=("$def")
+		(( ${#keys[-1]} > keyw )) && keyw=${#keys[-1]}
+	done < <(tr '\t' '\037' <"$binds_tsv")
+	# Keys first (padded to the longest), so a long label is what gets
+	# cut off, never the keys.
+	for i in "${!ids[@]}"; do
+		rows+=("$(printf '%-*s   %s' "$keyw" "${keys[i]}" "${labels[i]}")")
+	done
+	idx="$(printf '%s\n' "${rows[@]}" | menu "KEYBINDS" -theme-str 'window { width: 760px; } listview { lines: 14; }')" || return 0
 	[[ $idx =~ ^[0-9]+$ ]] || return 0
 	text="$(ask "${labels[$idx]}" "Now: ${keys[$idx]}  (default: ${defs[$idx]}). Type e.g. SUPER + D, or default")" || return 0
 	text="${text#"${text%%[![:space:]]*}"}"
