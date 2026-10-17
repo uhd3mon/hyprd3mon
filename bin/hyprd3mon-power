@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# hyprd3mon-power: rofi session menu (Lock / Logout / Restart / Shutdown).
+# Restart and Shutdown ask for confirmation in a second tiny prompt.
+# Toggle: if rofi is already open, close it instead.
+set -u
+
+if pgrep -x rofi >/dev/null 2>&1; then
+    pkill -x rofi
+    exit 0
+fi
+
+theme="${XDG_CONFIG_HOME:-$HOME/.config}/rofi/power.rasi"
+theme_args=()
+[[ -f $theme ]] && theme_args=(-theme "$theme")
+
+# Nerd Font (Material Design) icons.
+i_lock=$'\U000f033e'     # nf-md-lock
+i_logout=$'\U000f0343'   # nf-md-logout
+i_restart=$'\U000f0709'  # nf-md-restart
+i_power=$'\U000f0425'    # nf-md-power
+
+lock="$i_lock   Lock"
+logout="$i_logout   Logout"
+restart="$i_restart   Restart"
+shutdown="$i_power   Shutdown"
+
+user_label="${USER:-$(id -un)}@$(uname -n)"
+
+# menu PROMPT [extra rofi args...]  (options on stdin, choice on stdout)
+menu() {
+    local prompt=$1
+    shift
+    rofi -dmenu -i -no-custom -p "$prompt" "${theme_args[@]}" \
+        -theme-str "textbox-user { str: \"$user_label\"; }" "$@"
+}
+
+# confirm VERB ICON: second prompt; the destructive choice is red.
+confirm() {
+    local verb=$1 icon=$2 answer
+    answer=$(printf '%s\n%s\n' "$icon   $verb" "Cancel" |
+        menu "CONFIRM" -mesg "$verb now?" -u 0 -selected-row 1 \
+            -theme-str 'window { width: 260px; } listview { lines: 2; }')
+    [[ $answer == "$icon   $verb" ]]
+}
+
+logout_session() {
+    if command -v hyprshutdown >/dev/null 2>&1; then
+        hyprshutdown
+    else
+        hyprctl dispatch 'hl.dsp.exit()'
+    fi
+}
+
+choice=$(printf '%s\n' "$lock" "$logout" "$restart" "$shutdown" | menu "SESSION")
+
+case $choice in
+    "$lock")
+        pidof hyprlock >/dev/null 2>&1 || exec hyprlock
+        ;;
+    "$logout")
+        logout_session
+        ;;
+    "$restart")
+        confirm "Restart" "$i_restart" && exec systemctl reboot
+        ;;
+    "$shutdown")
+        confirm "Shutdown" "$i_power" && exec systemctl poweroff
+        ;;
+esac
+exit 0

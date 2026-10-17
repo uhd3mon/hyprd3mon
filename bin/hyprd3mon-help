@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# hyprd3mon-help: read-only rofi list of every keybind, by group.
+# Source: ~/.cache/hyprd3mon/keybinds.tsv, written by hyprland.lua on
+# each load (id, keys, label, default_keys, group; tab-separated).
+# The first row opens hyprd3mon-settings; other rows do nothing.
+# Toggle: if rofi is already open, close it instead.
+set -u
+
+if pgrep -x rofi >/dev/null 2>&1; then
+    pkill -x rofi
+    exit 0
+fi
+
+tsv="${XDG_CACHE_HOME:-$HOME/.cache}/hyprd3mon/keybinds.tsv"
+theme="${XDG_CONFIG_HOME:-$HOME/.config}/rofi/menu.rasi"
+settings="$HOME/.local/bin/hyprd3mon-settings"
+
+theme_args=()
+[[ -f $theme ]] && theme_args=(-theme "$theme")
+
+# Columns: the menu font is monospace, so space padding lines up.
+width=64          # characters per row: ~563px of a 640px window at 11pt
+i_edit=$'\U000f03eb'   # nf-md-pencil
+
+# Quoted replacements: bash 5.2 expands a bare & to the match.
+esc() {
+    local s=${1//&/'&amp;'}
+    s=${s//</'&lt;'}
+    printf '%s' "${s//>/'&gt;'}"
+}
+
+rows=()           # pango markup, one per rofi row
+active=()         # indices of group-header rows (styled by -a)
+rows+=("$i_edit  Edit keybinds…")
+mesg=""
+
+if [[ -r $tsv ]]; then
+    # Groups in first-seen order; rows keep file order inside a group.
+    mapfile -t groups < <(awk -F'\t' 'NF >= 3 && $1 != "id" { g = ($5 == "" ? "Other" : $5); if (!seen[g]++) print g }' "$tsv")
+    for group in "${groups[@]}"; do
+        active+=("${#rows[@]}")
+        rows+=("$(esc "${group^^}")")
+        # Tabs are IFS whitespace and would merge empty fields, so
+        # split on \x1f (unit separator) instead.
+        while IFS=$'\x1f' read -r id keys label default group_; do
+            [[ -n $id && $id != id ]] || continue
+            [[ -n ${group_:-} ]] || group_=Other
+            [[ $group_ == "$group" ]] || continue
+            [[ -n $label ]] || label=$id
+            if [[ -z $keys ]]; then
+                # fgalpha dims the theme's text colour, so the
+                # list reads on both the dark and the light theme.
+                shown="unbound"
+                style="fgalpha='45%'"
+            elif [[ $keys != "$default" ]]; then
+                shown=$keys          # user override: full colour + bold
+                style="weight='bold'"
+            else
+                shown=$keys
+                style="fgalpha='65%'"
+            fi
+            room=$(( width - ${#shown} - 2 ))
+            (( room < 12 )) && room=12
+            (( ${#label} > room )) && label="${label:0:room-1}…"
+            gap=$(( width - ${#label} - ${#shown} ))
+            (( gap < 2 )) && gap=2
+            pad=$(printf '%*s' "$gap" '')
+            rows+=("$(esc "$label")$pad<span $style>$(esc "$shown")</span>")
+        done < <(tr '\t' '\037' < "$tsv")
+    done
+    mesg="Bold keys are your own. Change them in Edit keybinds."
+else
+    rows+=("Close")
+    mesg="No keybind list yet. Hyprland writes it each time it loads its
+config: log in to Hyprland, or run <tt>hyprctl reload</tt>."
+fi
+
+active_arg=()
+if (( ${#active[@]} )); then
+    active_arg=(-a "$(IFS=,; echo "${active[*]}")")
+fi
+
+# Re-open on any row except "Edit" so picking a row is harmless.
+selected=0
+while :; do
+    choice=$(printf '%s\n' "${rows[@]}" |
+        rofi -dmenu -i -no-custom -markup-rows -format i \
+            -p "KEYBINDS" -mesg "$mesg" -selected-row "$selected" \
+            "${theme_args[@]}" "${active_arg[@]}" \
+            -theme-str 'window { width: 640px; } listview { lines: 14; }')
+    [[ $choice =~ ^[0-9]+$ ]] && (( choice < ${#rows[@]} )) || exit 0
+    if (( choice == 0 )); then
+        exec "$settings" keybinds
+    fi
+    [[ ${rows[choice]} == "Close" ]] && exit 0
+    selected=$choice
+done

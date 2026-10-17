@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# hyprd3mon-shot MODE: screenshot via Hyprshot, saved and copied.
+#   window   pick a window          region  drag a region
+#   monitor  the focused monitor    all     every monitor at once
+# Files go to $HYPRSHOT_DIR, else ~/Pictures/Screenshots.
+set -euo pipefail
+
+dir="${HYPRSHOT_DIR:-$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Screenshots}"
+mkdir -p "$dir"
+
+case "${1:-}" in
+window)  exec hyprshot -m window -o "$dir" ;;
+region)  exec hyprshot -m region -z -o "$dir" ;;
+monitor) exec hyprshot -m output -m active -o "$dir" ;;
+all)
+	# Hyprshot has no all-monitors mode; grim with no geometry grabs
+	# the whole layout (both stacked screens), then we match Hyprshot.
+	file="$dir/$(date +%Y-%m-%d-%H%M%S)_all.png"
+	grim "$file"
+	wl-copy --type image/png <"$file"
+	notify-send "Screenshot saved" "Image saved in <i>$file</i> and copied to the clipboard." \
+		-t 5000 -i "$file" -a Hyprshot
+	;;
+*)
+	echo "Usage: $(basename "$0") window|region|monitor|all" >&2
+	exit 2
+	;;
+esac

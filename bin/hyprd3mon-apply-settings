@@ -1,0 +1,439 @@
+#!/usr/bin/env bash
+# hyprd3mon-apply-settings: turn ~/.config/hyprd3mon/settings.conf and the
+# theme palette (~/.local/share/hyprd3mon/themes/<theme>.conf) into the
+# files in ~/.config/hyprd3mon/generated/ that waybar, rofi, kitty, mako
+# and hyprlock include, point wallpapers/current.png at the theme's
+# wallpaper, set gsettings, then reload the running apps.
+#   hyprd3mon-apply-settings              write files + reload
+#   hyprd3mon-apply-settings --no-reload  write files only (install.sh)
+# Missing or invalid keys fall back to the defaults below.
+set -euo pipefail
+
+conf_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hyprd3mon"
+settings="$conf_dir/settings.conf"
+out="$conf_dir/generated"
+share_dir="$HOME/.local/share/hyprd3mon"
+wall_dir="$share_dir/wallpapers"
+here="$(dirname "$(readlink -f "$0")")"
+
+reload=1
+case "${1:-}" in
+"") ;;
+--no-reload) reload=0 ;;
+-h | --help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+*) echo "Usage: $(basename "$0") [--no-reload]" >&2; exit 2 ;;
+esac
+
+command -v jq >/dev/null || { echo "error: jq is required" >&2; exit 1; }
+
+# Defaults (keep in sync with configs/hyprd3mon/settings.conf).
+declare -A S=(
+	[theme]=dark
+	[accent]=auto
+	[clock]=24h
+	[bar_taskbar]=on
+	[bar_network]=on
+	[bar_sound]=on
+	[bar_help]=on
+	[bar_settings]=on
+	[bar_tray]=on
+)
+
+# Palette keys (assets/themes/*.conf), by kind.
+HEX_KEYS=(bg panel panel2 raise ink ink2 dim faint bad warn accent_default
+	term_bg term_fg term_cursor selection_bg selection_fg
+	color0 color1 color2 color3 color4 color5 color6 color7
+	color8 color9 color10 color11 color12 color13 color14 color15)
+RGBA_KEYS=(glass glass_strong line line2 shadow)
+WORD_KEYS=(gtk_scheme gtk_theme icon_theme wallpaper hypr_inactive_border)
+# Colours exported to theme.css / theme.rasi / hyprlock-theme.conf.
+UI_KEYS=(bg panel panel2 raise glass glass_strong line line2
+	ink ink2 dim faint bad warn shadow)
+# Optional palette colours, exported too when present.
+EXTRA_KEYS=(bg2 hover ok bad_soft)
+OLD_FILES=(accent.css accent.rasi hyprlock-accent.conf kitty-accent.conf mako-accent)
+
+warn() { printf 'hyprd3mon-apply-settings: %s\n' "$*" >&2; }
+die() { warn "error: $*"; exit 1; }
+
+# Accepts "key=value" lines. "#" starts a comment only at the start of a
+# line or after whitespace, so "accent=#91e611" keeps its value.
+read_settings() {
+	local line key val
+	[[ -f $settings ]] || { warn "$settings not found; using defaults"; return 0; }
+	while IFS= read -r line || [[ -n $line ]]; do
+		line="${line#"${line%%[![:space:]]*}"}"
+		[[ $line == \#* ]] && continue
+		[[ $line == *=* ]] || continue
+		key="${line%%=*}" val="${line#*=}"
+		key="${key//[[:space:]]/}"
+		val="${val#"${val%%[![:space:]]*}"}"
+		# Strip a trailing comment only after the value starts, so
+		# "accent = #22d3ee  # cyan" keeps #22d3ee.
+		val="${val%%[[:space:]]#*}"
+		val="${val%"${val##*[![:space:]]}"}"
+		[[ -v S[$key] ]] || { warn "unknown key '$key' ignored"; continue; }
+		S[$key]="$val"
+	done <"$settings"
+}
+
+validate() {
+	local k accent="${S[accent]}"
+	S[theme]="${S[theme],,}"
+	if [[ ${S[theme]} != dark && ${S[theme]} != light ]]; then
+		warn "theme '${S[theme]}' is not dark or light; using dark"
+		S[theme]=dark
+	fi
+	if [[ ${accent,,} == auto ]]; then
+		S[accent]=auto
+	elif [[ ${accent#\#} =~ ^[0-9A-Fa-f]{6}$ ]]; then
+		accent="${accent#\#}"
+		S[accent]="#${accent,,}"
+	else
+		warn "accent '${S[accent]}' is not auto or #rrggbb; using auto"
+		S[accent]=auto
+	fi
+	if [[ ${S[clock]} != 24h && ${S[clock]} != 12h ]]; then
+		warn "clock '${S[clock]}' is not 24h or 12h; using 24h"
+		S[clock]=24h
+	fi
+	for k in bar_taskbar bar_network bar_sound bar_help bar_settings bar_tray; do
+		if [[ ${S[$k]} != on && ${S[$k]} != off ]]; then
+			warn "$k '${S[$k]}' is not on or off; using on"
+			S[$k]=on
+		fi
+	done
+}
+
+# ---------------------------------------------------------------- palette
+
+# palette_file NAME: the installed palette, else the repo copy (when run
+# from the repo). Fails if neither exists.
+palette_file() {
+	local f
+	for f in "$share_dir/themes/$1.conf" "$here/../assets/themes/$1.conf"; do
+		[[ -f $f ]] && { readlink -f "$f"; return 0; }
+	done
+	return 1
+}
+
+# load_palette FILE ARRAY: KEY=VALUE lines into the named assoc array.
+# Parsed, not sourced. Values may be "double" or 'single' quoted.
+load_palette() {
+	local file=$1 line key val
+	local -n arr=$2
+	while IFS= read -r line || [[ -n $line ]]; do
+		line="${line#"${line%%[![:space:]]*}"}"
+		[[ $line =~ ^([a-z][a-z0-9_]*)=(.*)$ ]] || continue
+		key="${BASH_REMATCH[1]}" val="${BASH_REMATCH[2]}"
+		if [[ $val =~ ^\"([^\"]*)\" || $val =~ ^\'([^\']*)\' ]]; then
+			val="${BASH_REMATCH[1]}"
+		else
+			val="${val%%[[:space:]]#*}"
+			val="${val%"${val##*[![:space:]]}"}"
+		fi
+		arr[$key]="$val"
+	done <"$file"
+}
+
+# parse_rgba TEXT: prints "r g b a" for rgba(r,g,b,a), rgb(r,g,b) or
+# #rrggbb; fails otherwise. Alpha is printed as a 0-1 float.
+parse_rgba() {
+	local t="${1//[[:space:]]/}" h
+	if [[ $t =~ ^#([0-9A-Fa-f]{6})$ ]]; then
+		h="${BASH_REMATCH[1]}"
+		printf '%d %d %d 1\n' "$((16#${h:0:2}))" "$((16#${h:2:2}))" "$((16#${h:4:2}))"
+	elif [[ $t =~ ^rgba?\(([0-9]{1,3}),([0-9]{1,3}),([0-9]{1,3})(,([0-9]*\.?[0-9]+))?\)$ ]]; then
+		awk -v r="${BASH_REMATCH[1]}" -v g="${BASH_REMATCH[2]}" -v b="${BASH_REMATCH[3]}" \
+			-v a="${BASH_REMATCH[5]:-1}" '
+			BEGIN {
+				if (r > 255 || g > 255 || b > 255 || a > 1) exit 1
+				printf "%d %d %d %g\n", r, g, b, a
+			}'
+	else
+		return 1
+	fi
+}
+
+# Load the theme's palette into P and the converted forms into
+# CSS (CSS colour), HL (hyprlang colour) and H8 (#rrggbbaa, for mako).
+declare -A P=() CSS=() HL=() H8=()
+load_theme() {
+	local file k r g b a
+	local -A D=()
+	if ! file="$(palette_file "${S[theme]}")"; then
+		warn "palette '${S[theme]}' not found in $share_dir/themes; using dark"
+		S[theme]=dark
+		file="$(palette_file dark)" || die "no dark palette in $share_dir/themes"
+	fi
+	load_palette "$file" P
+	# Keys missing from the light palette come from the dark one.
+	if [[ ${S[theme]} != dark ]] && file="$(palette_file dark)"; then
+		load_palette "$file" D
+	fi
+	for k in "${HEX_KEYS[@]}" "${RGBA_KEYS[@]}" "${WORD_KEYS[@]}"; do
+		[[ -n ${P[$k]:-} ]] && continue
+		[[ -n ${D[$k]:-} ]] || die "palette '${S[theme]}' has no '$k'"
+		warn "palette '${S[theme]}' has no '$k'; using the dark value"
+		P[$k]="${D[$k]}"
+	done
+	for k in "${HEX_KEYS[@]}"; do
+		[[ ${P[$k]} =~ ^#[0-9A-Fa-f]{6}$ ]] || die "palette '$k' is not #rrggbb: ${P[$k]}"
+		P[$k]="${P[$k],,}"
+	done
+	for k in "${EXTRA_KEYS[@]}"; do
+		[[ -z ${P[$k]:-} ]] || parse_rgba "${P[$k]}" >/dev/null || {
+			warn "palette '$k' is not a colour; skipped"
+			unset "P[$k]"
+		}
+	done
+	for k in accent_ink_default cal_months cal_weekdays cal_days; do
+		[[ -z ${P[$k]:-} || ${P[$k]} =~ ^#[0-9A-Fa-f]{6}$ ]] || {
+			warn "palette '$k' is not #rrggbb; skipped"
+			unset "P[$k]"
+		}
+	done
+	for k in "${EXTRA_KEYS[@]}"; do [[ -n ${P[$k]:-} ]] && UI_KEYS+=("$k"); done
+	for k in "${UI_KEYS[@]}" "${HEX_KEYS[@]}"; do
+		read -r r g b a < <(parse_rgba "${P[$k]}") || die "palette '$k' is not a colour: ${P[$k]}"
+		if [[ ${P[$k]} == \#* ]]; then
+			CSS[$k]="${P[$k]}" HL[$k]="rgb($r, $g, $b)"
+		else
+			CSS[$k]="rgba($r,$g,$b,$a)" HL[$k]="rgba($r, $g, $b, $a)"
+		fi
+		H8[$k]="$(awk -v r="$r" -v g="$g" -v b="$b" -v a="$a" \
+			'BEGIN { printf "#%02x%02x%02x%02x\n", r, g, b, int(a * 255 + 0.5) }')"
+	done
+	[[ ${P[wallpaper]} =~ ^[A-Za-z0-9._-]+$ ]] || die "palette 'wallpaper' must be a file name: ${P[wallpaper]}"
+	case ${P[gtk_scheme]} in default | prefer-dark | prefer-light) ;;
+	*) die "palette 'gtk_scheme' must be default, prefer-dark or prefer-light" ;;
+	esac
+}
+
+# ink_for R G B: the text colour with the higher WCAG contrast on the
+# accent (#0b1400 on light accents, #eceee9 on dark ones).
+ink_for() {
+	awk -v r="$1" -v g="$2" -v b="$3" '
+		function lin(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ^ 2.4 }
+		function lum(r, g, b) { return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) }
+		BEGIN {
+			a = lum(r, g, b)
+			dark = lum(11, 20, 0); light = lum(236, 238, 233)
+			cd = (a + 0.05) / (dark + 0.05)
+			cl = (light + 0.05) / (a + 0.05)
+			print (cd >= cl) ? "#0b1400" : "#eceee9"
+		}'
+}
+
+# ---------------------------------------------------------------- output
+
+# write_file NAME: stdin -> $out/NAME, atomically, only if it changed.
+write_file() {
+	local dest="$out/$1" tmp
+	tmp="$(mktemp "$out/.$1.XXXXXX")"
+	cat >"$tmp"
+	if [[ -f $dest ]] && cmp -s "$tmp" "$dest"; then
+		rm -f -- "$tmp"
+	else
+		chmod 644 "$tmp"
+		mv -f -- "$tmp" "$dest"
+		echo "wrote $dest"
+	fi
+}
+
+HEADER="Generated by hyprd3mon-apply-settings; edit settings.conf or the theme palette instead."
+
+theme_css() {
+	local k
+	printf '/* %s */\n' "$HEADER"
+	for k in "${UI_KEYS[@]}"; do printf '@define-color %s %s;\n' "$k" "${CSS[$k]}"; done
+	printf '@define-color accent %s;\n' "$ACC"
+	printf '@define-color accent_ink %s;\n' "$INK"
+	printf '@define-color accent_soft rgba(%s,0.14);\n' "$ACC_RGB"
+}
+
+theme_rasi() {
+	local k
+	printf '/* %s */\n* {\n' "$HEADER"
+	for k in "${UI_KEYS[@]}"; do printf '    %s: %s;\n' "${k//_/-}" "${CSS[$k]}"; done
+	printf '    accent: %s;\n' "$ACC"
+	printf '    accent-ink: %s;\n' "$INK"
+	printf '    accent-soft: rgba(%s,0.14);\n}\n' "$ACC_RGB"
+}
+
+hyprlock_theme() {
+	local k
+	printf '# %s\n' "$HEADER"
+	for k in "${UI_KEYS[@]}"; do printf '$%s = %s\n' "$k" "${HL[$k]}"; done
+	printf '$accent = rgb(%s)\n' "${ACC_RGB//,/, }"
+	printf '$accent_ink = rgb(%d, %d, %d)\n' "$((16#${INK:1:2}))" "$((16#${INK:3:2}))" "$((16#${INK:5:2}))"
+	printf '$accent_soft = rgba(%s, 0.14)\n' "${ACC_RGB//,/, }"
+	# rrggbb copies for Pango markup (<span foreground="##$dim_hex">).
+	for k in "${UI_KEYS[@]}"; do
+		[[ ${CSS[$k]} =~ ^#[0-9a-fA-F]{6}$ ]] && printf '$%s_hex = %s\n' "$k" "${CSS[$k]#\#}"
+	done
+	printf '$accent_hex = %s\n' "${ACC#\#}"
+}
+
+# Palette colours equal to accent_default follow a custom accent.
+follow_accent() { if [[ $1 == "${P[accent_default]}" ]]; then echo "$ACC"; else echo "$1"; fi; }
+
+kitty_theme() {
+	local i cursor sel_bg sel_fg="${P[selection_fg]}"
+	cursor="$(follow_accent "${P[term_cursor]}")"
+	sel_bg="$(follow_accent "${P[selection_bg]}")"
+	[[ $sel_bg == "${P[selection_bg]}" ]] || sel_fg=$INK
+	printf '# %s\n' "$HEADER"
+	cat <<EOF
+foreground              ${P[term_fg]}
+background              ${P[term_bg]}
+cursor                  $cursor
+cursor_text_color       ${P[term_bg]}
+selection_foreground    $sel_fg
+selection_background    $sel_bg
+url_color               $ACC
+active_border_color     $ACC
+inactive_border_color   ${P[faint]}
+bell_border_color       ${P[bad]}
+active_tab_foreground   $INK
+active_tab_background   $ACC
+inactive_tab_foreground ${P[dim]}
+inactive_tab_background ${P[panel]}
+tab_bar_background      ${P[term_bg]}
+EOF
+	for i in {0..15}; do printf 'color%-3s %s\n' "$i" "${P[color$i]}"; done
+}
+
+# Global section only: mako's config includes this before any [criteria].
+mako_theme() {
+	printf '# %s\n' "$HEADER"
+	cat <<EOF
+background-color=${H8[glass]}
+text-color=${P[ink]}
+border-color=${H8[line2]}
+progress-color=over $ACC
+EOF
+}
+
+waybar_modules() {
+	local fmt dim="${P[dim]}"
+	if [[ ${S[clock]} == 12h ]]; then
+		fmt="{:%I:%M %p  <span foreground='$dim'>%a %d %b</span>}"
+	else
+		fmt="{:%H:%M  <span foreground='$dim'>%a %d %b</span>}"
+	fi
+	jq -n \
+		--arg taskbar "${S[bar_taskbar]}" --arg network "${S[bar_network]}" \
+		--arg sound "${S[bar_sound]}" --arg help "${S[bar_help]}" \
+		--arg settings "${S[bar_settings]}" --arg tray "${S[bar_tray]}" \
+		--arg fmt "$fmt" \
+		--arg months "<span foreground='${P[cal_months]:-${P[ink]}}'><b>{}</b></span>" \
+		--arg weekdays "<span foreground='${P[cal_weekdays]:-$dim}'>{}</span>" \
+		--arg days "<span foreground='${P[cal_days]:-${P[ink2]}}'>{}</span>" \
+		--arg today "<span foreground='$ACC'><b>{}</b></span>" \
+		--arg icons "${P[icon_theme]:-Papirus-Dark}" '
+		def on($v; $m): if $v == "on" then [$m] else [] end;
+		{
+			"modules-left": (["custom/user"] + on($taskbar; "wlr/taskbar")),
+			"modules-center": ["clock"],
+			"wlr/taskbar": { "icon-theme": $icons },
+			"modules-right": (on($network; "network") + on($sound; "wireplumber")
+				+ on($help; "custom/help") + on($settings; "custom/settings")
+				+ on($tray; "tray") + ["custom/power"]),
+			"clock": { "format": $fmt,
+				"calendar": { "format": { "months": $months, "weekdays": $weekdays,
+					"days": $days, "today": $today } } }
+		}'
+}
+
+# link_wallpaper: current.png -> the palette's wallpaper. Sets WALL_CHANGED.
+WALL_CHANGED=0
+link_wallpaper() {
+	local name="${P[wallpaper]}" link="$wall_dir/current.png"
+	if [[ ! -f $wall_dir/$name ]]; then
+		warn "wallpaper $wall_dir/$name not found; current.png left as is"
+		return 0
+	fi
+	[[ -L $link && $(readlink "$link") == "$name" ]] && return 0
+	ln -sfn -- "$name" "$link"
+	WALL_CHANGED=1
+	echo "linked $link -> $name"
+}
+
+# set_gsettings: color-scheme, gtk-theme and icon-theme from the palette,
+# only where they differ.
+set_gsettings() {
+	local schema=org.gnome.desktop.interface key val cur
+	command -v gsettings >/dev/null || { warn "gsettings not found; GTK theme not set"; return 0; }
+	for key in color-scheme gtk-theme icon-theme; do
+		case $key in
+		color-scheme) val="${P[gtk_scheme]}" ;;
+		gtk-theme) val="${P[gtk_theme]}" ;;
+		icon-theme) val="${P[icon_theme]}" ;;
+		esac
+		cur="$(gsettings get "$schema" "$key" 2>/dev/null)" || cur=""
+		[[ $cur == "'$val'" ]] && continue
+		if gsettings set "$schema" "$key" "$val" 2>/dev/null; then
+			echo "gsettings $key $val"
+		else
+			warn "gsettings set $key $val failed"
+		fi
+	done
+}
+
+restart_hyprpaper() {
+	local i
+	pgrep -x hyprpaper >/dev/null 2>&1 || return 0
+	pkill -x hyprpaper 2>/dev/null || true
+	for i in {1..20}; do
+		pgrep -x hyprpaper >/dev/null 2>&1 || break
+		sleep 0.1
+	done
+	setsid -f hyprpaper </dev/null >/dev/null 2>&1 || warn "could not restart hyprpaper"
+}
+
+main() {
+	local hex r g b f
+	read_settings
+	validate
+	load_theme
+
+	ACC="${S[accent]}"
+	[[ $ACC == auto ]] && ACC="${P[accent_default]}"
+	hex="${ACC#\#}"
+	r=$((16#${hex:0:2})) g=$((16#${hex:2:2})) b=$((16#${hex:4:2}))
+	if [[ ${S[accent]} == auto && -n ${P[accent_ink_default]:-} ]]; then
+		INK="${P[accent_ink_default],,}"
+	else
+		INK="$(ink_for "$r" "$g" "$b")"
+	fi
+	ACC_RGB="$r,$g,$b"
+
+	mkdir -p "$out" "$wall_dir"
+
+	theme_css | write_file theme.css
+	theme_rasi | write_file theme.rasi
+	hyprlock_theme | write_file hyprlock-theme.conf
+	kitty_theme | write_file kitty-theme.conf
+	mako_theme | write_file mako-theme
+	waybar_modules | write_file waybar-modules.jsonc
+	for f in "${OLD_FILES[@]}"; do
+		if [[ -e $out/$f || -L $out/$f ]]; then
+			rm -f -- "${out:?}/$f"
+			echo "removed $out/$f"
+		fi
+	done
+
+	link_wallpaper
+	set_gsettings
+
+	if ((reload)); then
+		((WALL_CHANGED)) && restart_hyprpaper
+		hyprctl reload >/dev/null 2>&1 || true
+		pkill -SIGUSR2 -x waybar 2>/dev/null || true
+		makoctl reload >/dev/null 2>&1 || true
+		pkill -SIGUSR1 -x kitty 2>/dev/null || true
+	fi
+}
+
+main

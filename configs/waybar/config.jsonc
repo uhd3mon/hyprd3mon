@@ -1,0 +1,126 @@
+// hyprd3mon top bar (Waybar 0.15)
+// Full width, flush with the top edge, square, one bottom hairline.
+// Shown on every monitor (no "output" key on purpose).
+//
+// The module lists and the clock "format" are NOT set here: they come
+// from the settings generator (bin/hyprd3mon-apply-settings), built
+// from ~/.config/hyprd3mon/settings.conf. Waybar merges the include
+// into this file (nested objects such as "clock" merge key by key),
+// and keys set here win. So: never add "modules-*" or clock.format.
+//
+// Icons are JetBrainsMono Nerd Font code points, written as escapes:
+// \udbxx\udcxx pairs are Material Design (nf-md-*) icons.
+{
+  "include": ["~/.config/hyprd3mon/generated/waybar-modules.jsonc"],
+
+  "layer": "top",
+  "position": "top",
+  "height": 34,
+  "spacing": 0,
+  "exclusive": true,
+  "reload_style_on_change": true,
+
+  // Left: user name (opens the launcher), then open apps.
+  "custom/user": {
+    "exec": "id -un",
+    "interval": "once",
+    "format": "<span size='small' fgalpha='65%'></span>  {}",  // nf-fa-user
+    "tooltip": true,
+    "tooltip-format": "Apps",
+    "on-click": "~/.local/bin/hyprd3mon-launcher"
+  },
+
+  "wlr/taskbar": {
+    "format": "{icon}",
+    "icon-size": 18,
+    "all-outputs": true,
+    "tooltip-format": "{title}",
+    "on-click": "activate",
+    "on-click-middle": "close",
+    "ignore-list": []
+  },
+
+  // Centre: time + date. "format" comes from the generator (24h/12h).
+  "clock": {
+    "interval": 1,
+    "tooltip-format": "<tt>{calendar}</tt>",
+    "calendar": {
+      "mode": "month",
+      "weeks-pos": "",
+      // "format" (months/weekdays/days/today colours) comes from the
+      // generator: palette cal_* keys + the accent for today.
+      "on-scroll": 1
+    },
+    "actions": {
+      "on-scroll-up": "shift_down",
+      "on-scroll-down": "shift_up",
+      "on-click-right": "shift_reset"
+    }
+  },
+
+  // Right: network, sound, help, settings, tray, power.
+  "network": {
+    "interval": 5,
+    "format-wifi": "{icon}",
+    "format-ethernet": "󰈀",            // nf-md-ethernet
+    "format-linked": "󰈀",
+    "format-disconnected": "󰤭",        // nf-md-wifi_strength_off_outline
+    "format-disabled": "󰤭",
+    "format-icons": [
+      "󰤟",                             // nf-md-wifi_strength_1
+      "󰤢",                             // nf-md-wifi_strength_2
+      "󰤥",                             // nf-md-wifi_strength_3
+      "󰤨"                              // nf-md-wifi_strength_4
+    ],
+    "tooltip-format-wifi": "{essid}  {signalStrength}%\n{ipaddr}/{cidr} on {ifname}",
+    "tooltip-format-ethernet": "Wired\n{ipaddr}/{cidr} on {ifname}",
+    "tooltip-format-linked": "{ifname}: no IP address",
+    "tooltip-format-disconnected": "Not connected",
+    "tooltip-format-disabled": "Networking is off",
+    "on-click": "kitty --class hyprd3mon-float -e nmtui",
+    "on-click-right": "nm-connection-editor"
+  },
+
+  // Scroll changes the volume natively (5% steps, capped at 100%).
+  "wireplumber": {
+    "format": "{icon}  {volume}%",
+    "format-muted": "󰝟  muted",        // nf-md-volume_mute
+    "format-icons": [
+      "󰕿",                             // nf-md-volume_low
+      "󰖀",                             // nf-md-volume_medium
+      "󰕾"                              // nf-md-volume_high
+    ],
+    "scroll-step": 5,
+    "max-volume": 100,
+    "tooltip": true,
+    "tooltip-format": "{node_name}",
+    "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+    "on-click-right": "pavucontrol"
+  },
+
+  "custom/help": {
+    "format": "󰘥",                     // nf-md-help_circle_outline
+    "tooltip": true,
+    "tooltip-format": "Keybinds",
+    "on-click": "~/.local/bin/hyprd3mon-help"
+  },
+
+  "custom/settings": {
+    "format": "",                           // nf-fa-gear
+    "tooltip": true,
+    "tooltip-format": "Settings",
+    "on-click": "~/.local/bin/hyprd3mon-settings"
+  },
+
+  "tray": {
+    "icon-size": 16,
+    "spacing": 12
+  },
+
+  "custom/power": {
+    "format": "",                           // nf-fa-power_off
+    "tooltip": true,
+    "tooltip-format": "Lock, log out, restart or shut down",
+    "on-click": "~/.local/bin/hyprd3mon-power"
+  }
+}

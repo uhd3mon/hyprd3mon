@@ -1,0 +1,40 @@
+/* d3mon theme tokens for rofi 2.0 (shared by launcher, power, menu).
+   Glass like the Workspace app: Hyprland blurs the "rofi" layer.
+
+   The dark palette below is the fallback; the settings generator's
+   theme.rasi (dark or light palette + accent) then overrides it.
+   `?import` is rofi's optional import: no error if it is missing. */
+
+* {
+    bg:           #070707;
+    panel:        #0d0d0e;
+    panel2:       #111112;
+    raise:        #141415;
+    glass:        rgba(7, 7, 7, 0.78);
+    glass-strong: rgba(13, 13, 14, 0.96);
+    hover:        rgba(255, 255, 255, 0.05);
+    line:         rgba(255, 255, 255, 0.07);
+    line2:        rgba(255, 255, 255, 0.11);
+    shadow:       rgba(0, 0, 0, 0.55);
+    ink:          #eceee9;
+    ink2:         #c6c9c3;
+    dim:          #8a8d88;
+    faint:        #545752;
+    ok:           #6fd13a;
+    bad:          #ff5f56;
+    bad-soft:     rgba(255, 95, 86, 12%);
+    warn:         #f0b43c;
+
+    accent:       #91e611;
+    accent-ink:   #0b1400;
+    accent-soft:  rgba(145, 230, 17, 14%);
+}
+
+?import "~/.config/hyprd3mon/generated/theme.rasi"
+
+* {
+    background-color: transparent;
+    text-color:       @ink;
+    border-color:     @line;
+    font:             "JetBrainsMono Nerd Font 11";
+}

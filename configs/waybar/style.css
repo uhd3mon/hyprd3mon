@@ -1,0 +1,182 @@
+/* hyprd3mon top bar: d3mon theme, glass, full width.
+   Every colour comes from the settings generator (dark or light
+   palette + accent). GTK CSS has no optional import: if this file is
+   missing, the whole stylesheet fails to load, so the installer always
+   generates it. It defines @bg @panel @panel2 @raise @glass
+   @glass_strong @hover @line @line2 @ink @ink2 @dim @faint @bad @warn
+   @shadow @accent @accent_ink @accent_soft. */
+@import url("../hyprd3mon/generated/theme.css");
+
+* {
+  font-family: "JetBrainsMono Nerd Font", monospace;
+  font-size: 13px;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+/* One flat strip; Hyprland blurs the "waybar" layer behind it. */
+window#waybar {
+  background: @glass;
+  border-bottom: 1px solid @line;
+  color: @ink;
+}
+
+/* Every clickable module: full-height segment, square hover. */
+#custom-user,
+#network,
+#wireplumber,
+#custom-help,
+#custom-settings,
+#custom-power {
+  padding: 0 12px;
+  color: @dim;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+#custom-user:hover,
+#network:hover,
+#wireplumber:hover,
+#custom-help:hover,
+#custom-settings:hover,
+#custom-power:hover {
+  background: @hover;
+  color: @ink;
+}
+
+/* Left ------------------------------------------------------------ */
+
+#custom-user {
+  color: @ink;
+  font-weight: 600;
+  padding: 0 16px 0 14px;
+}
+
+#custom-user:hover {
+  color: @accent;
+}
+
+#taskbar {
+  padding: 0 6px;
+  border-left: 1px solid @line;
+}
+
+#taskbar button {
+  padding: 0 10px;
+  background: transparent;
+  color: @dim;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+#taskbar button:hover {
+  background: @hover;
+}
+
+/* Active app: one accent underline on the bar's bottom edge. */
+#taskbar button.active {
+  background: @hover;
+  box-shadow: inset 0 -2px @accent;
+}
+
+#taskbar button.minimized {
+  opacity: 0.5;
+}
+
+/* Centre ---------------------------------------------------------- */
+
+#clock {
+  color: @ink;
+  font-weight: 600;
+  letter-spacing: 1px;
+  padding: 0 14px;
+}
+
+/* Right ----------------------------------------------------------- */
+
+#network {
+  font-size: 15px;
+}
+
+#network.disconnected,
+#network.disabled {
+  color: @faint;
+}
+
+#wireplumber {
+  color: @ink2;
+}
+
+#wireplumber.muted {
+  color: @faint;
+}
+
+#custom-help,
+#custom-settings {
+  font-size: 15px;
+  padding: 0 11px;
+}
+
+#tray {
+  padding: 0 14px;
+  border-left: 1px solid @line;
+}
+
+#tray > .passive {
+  -gtk-icon-effect: dim;
+}
+
+#tray > .needs-attention {
+  -gtk-icon-effect: highlight;
+}
+
+#custom-power {
+  font-size: 14px;
+  padding: 0 16px 0 15px;
+  border-left: 1px solid @line;
+}
+
+#custom-power:hover {
+  background: alpha(@bad, 0.10);
+  color: @bad;
+}
+
+/* Tooltips + tray menus: near-opaque (@glass_strong), since Hyprland does not blur
+   popups. Popups keep a small radius; the bar itself is square. */
+
+tooltip {
+  background: @glass_strong;
+  border: 1px solid @line2;
+  border-radius: 8px;
+}
+
+tooltip label {
+  color: @ink;
+  padding: 4px 6px;
+}
+
+menu,
+#tray menu {
+  background: @glass_strong;
+  border: 1px solid @line2;
+  border-radius: 8px;
+  padding: 6px;
+  color: @ink;
+}
+
+menu menuitem {
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+menu menuitem:hover {
+  background: @accent_soft;
+  color: @ink;
+}
+
+menu separator {
+  background: @line;
+  min-height: 1px;
+  margin: 4px 0;
+}

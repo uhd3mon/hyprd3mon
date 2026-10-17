@@ -1,0 +1,364 @@
+#!/usr/bin/env bash
+# hyprd3mon-settings: rofi settings menu (theme, accent colour, keybinds,
+# top bar, monitors). Edits ~/.config/hyprd3mon/settings.conf and
+# keybinds.conf in place (comments kept), then runs
+# hyprd3mon-apply-settings / hyprctl reload.
+#   hyprd3mon-settings                  main menu (toggle: closes an open rofi)
+#   hyprd3mon-settings theme|accent|keybinds|bar|monitors   open that page
+# Sourcing this file only defines the functions (used by tests).
+set -u
+
+conf_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hyprd3mon"
+settings="$conf_dir/settings.conf"
+keybinds="$conf_dir/keybinds.conf"
+binds_tsv="${XDG_CACHE_HOME:-$HOME/.cache}/hyprd3mon/keybinds.tsv"
+here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+
+theme="${XDG_CONFIG_HOME:-$HOME/.config}/rofi/menu.rasi"
+theme_args=()
+[[ -f $theme ]] && theme_args=(-theme "$theme")
+
+THEMES=(dark light)
+THEME_LABELS=(Dark Light)
+ACCENTS=(
+	"Auto (theme default)	auto"
+	"Lime	#91e611"
+	"Cyan	#22d3ee"
+	"Violet	#a78bfa"
+	"Amber	#f0b43c"
+	"Rose	#fb7185"
+	"White	#eceee9"
+)
+BAR_KEYS=(bar_taskbar bar_network bar_sound bar_help bar_settings bar_tray)
+BAR_LABELS=(Taskbar Network Sound Help Settings Tray)
+
+notify() {
+	if command -v notify-send >/dev/null 2>&1; then
+		notify-send -a hyprd3mon "Settings" "$*"
+	else
+		printf 'hyprd3mon-settings: %s\n' "$*" >&2
+	fi
+}
+
+# Runs a sibling command, falling back to PATH.
+tool() {
+	local name=$1
+	shift
+	if [[ -x $here/$name ]]; then "$here/$name" "$@"; else "$name" "$@"; fi
+}
+
+# ---------------------------------------------------------------- files
+
+# get_setting KEY DEFAULT: last "KEY = value" in settings.conf.
+get_setting() {
+	local v
+	v="$(awk -v k="$1" '
+		{ line = $0; sub(/^[ \t]+/, "", line) }
+		line ~ /^#/ { next }
+		{
+			i = index(line, "="); if (!i) next
+			key = substr(line, 1, i - 1); gsub(/[ \t]/, "", key)
+			if (key != k) next
+			val = substr(line, i + 1)
+			sub(/^[ \t]+/, "", val); sub(/[ \t]+#.*$/, "", val); sub(/[ \t]+$/, "", val)
+			found = val
+		}
+		END { print found }' "$settings" 2>/dev/null)"
+	printf '%s\n' "${v:-$2}"
+}
+
+# set_line FILE KEY LINE: replace the first "KEY =" line with LINE (and
+# drop later duplicates), or append LINE. LINE empty = remove. Comments
+# (also a trailing "  # ..." on the replaced line) and the order of
+# other lines are kept.
+set_line() {
+	local file=$1 key=$2 new=$3 tmp
+	mkdir -p "$(dirname "$file")"
+	[[ -f $file ]] || : >"$file"
+	tmp="$(mktemp "$file.XXXXXX")" || return 1
+	awk -v k="$key" -v new="$new" '
+		{
+			line = $0; sub(/^[ \t]+/, "", line)
+			i = index(line, "=")
+			key = i ? substr(line, 1, i - 1) : ""; gsub(/[ \t]/, "", key)
+			if (line !~ /^#/ && i && key == k) {
+				val = substr(line, i + 1); sub(/^[ \t]+/, "", val)
+				tail = match(val, /[ \t]+#.*$/) ? substr(val, RSTART) : ""
+				if (!done && new != "") print new tail
+				done = 1; next
+			}
+			print
+		}
+		END { if (!done && new != "") print new }' "$file" >"$tmp" &&
+		cat "$tmp" >"$file"
+	rm -f -- "$tmp"
+}
+
+set_setting() { set_line "$settings" "$1" "$1=$2"; }
+set_keybind() { set_line "$keybinds" "$1" "$1 = $2"; }
+reset_keybind() { set_line "$keybinds" "$1" ""; }
+
+# normalize_hex TEXT: prints "#rrggbb" or fails.
+normalize_hex() {
+	local h="${1//[[:space:]]/}"
+	h="${h#\#}"
+	[[ $h =~ ^[0-9A-Fa-f]{6}$ ]] || return 1
+	printf '#%s\n' "${h,,}"
+}
+
+# normalize_combo TEXT: prints "MODS + KEY" (mods in SUPER, SHIFT, CTRL,
+# ALT order) or fails. Accepts any case and spacing, e.g. "super+d".
+normalize_combo() {
+	local IFS=+ parts=() p key m out=""
+	local -A seen=()
+	[[ $1 == *[![:space:]]* ]] || return 1
+	read -ra parts <<<"$1"
+	[[ $1 != *+ ]] || return 1
+	((${#parts[@]})) || return 1
+	for p in "${parts[@]}"; do
+		p="${p#"${p%%[![:space:]]*}"}"
+		p="${p%"${p##*[![:space:]]}"}"
+		[[ -n $p && $p != *[[:space:]]* ]] || return 1
+		key=$p
+	done
+	for p in "${parts[@]::${#parts[@]}-1}"; do
+		p="${p//[[:space:]]/}"
+		p="${p^^}"
+		[[ $p == CONTROL ]] && p=CTRL
+		case $p in SUPER | SHIFT | CTRL | ALT) ;; *) return 1 ;; esac
+		[[ -z ${seen[$p]:-} ]] || return 1
+		seen[$p]=1
+	done
+	[[ $key =~ ^[A-Za-z0-9_:.-]+$ ]] || return 1
+	((${#key} == 1)) && key="${key^^}"
+	for m in SUPER SHIFT CTRL ALT; do
+		[[ -n ${seen[$m]:-} ]] && out+="$m + "
+	done
+	printf '%s%s\n' "$out" "$key"
+}
+
+# combo_owner COMBO ID: label of another row in keybinds.tsv already
+# using COMBO (empty if none).
+combo_owner() {
+	local want=$1 self=$2 id keys label rest norm
+	[[ -f $binds_tsv ]] || return 0
+	while IFS=$'\t' read -r id keys label rest; do
+		[[ $id == "$self" ]] && continue
+		norm="$(normalize_combo "$keys" 2>/dev/null)" || continue
+		if [[ $norm == "$want" ]]; then
+			printf '%s\n' "${label:-$id}"
+			return 0
+		fi
+	done <"$binds_tsv"
+}
+
+apply() { tool hyprd3mon-apply-settings >/dev/null || notify "Applying settings failed"; }
+
+# ----------------------------------------------------------------- menus
+
+# menu PROMPT [rofi args...]: options on stdin, row index on stdout.
+menu() {
+	local prompt=$1
+	shift
+	rofi -dmenu -i -no-custom -format i -p "$prompt" "${theme_args[@]}" "$@"
+}
+
+# ask PROMPT MESG: free text on stdout.
+ask() {
+	rofi -dmenu -p "$1" -mesg "$2" "${theme_args[@]}" </dev/null
+}
+
+menu_theme() {
+	local cur i idx rows=() sel=0
+	cur="$(get_setting theme dark)"
+	cur="${cur,,}"
+	[[ $cur == light ]] || cur=dark
+	for i in "${!THEMES[@]}"; do
+		if [[ ${THEMES[$i]} == "$cur" ]]; then
+			sel=$i
+			rows+=("$(printf '%-8s %s' "${THEME_LABELS[$i]}" "(current)")")
+		else
+			rows+=("${THEME_LABELS[$i]}")
+		fi
+	done
+	idx="$(printf '%s\n' "${rows[@]}" | menu "THEME" -selected-row "$sel")" || return 0
+	[[ $idx =~ ^[0-9]+$ ]] && ((idx < ${#THEMES[@]})) || return 0
+	[[ ${THEMES[$idx]} == "$cur" ]] && return 0
+	set_setting theme "${THEMES[$idx]}"
+	apply
+}
+
+menu_accent() {
+	local cur i idx name hex rows=() sel=${#ACCENTS[@]} text
+	cur="$(get_setting accent auto)"
+	if [[ ${cur,,} == auto ]]; then
+		cur=auto
+	else
+		cur="$(normalize_hex "$cur")" || cur=auto
+	fi
+	for i in "${!ACCENTS[@]}"; do
+		IFS=$'\t' read -r name hex <<<"${ACCENTS[$i]}"
+		[[ $hex == "$cur" ]] && sel=$i
+		if [[ $hex == auto ]]; then
+			rows+=("$name")
+		else
+			rows+=("$(printf '%-8s %s' "$name" "$hex")")
+		fi
+	done
+	rows+=("Custom…")
+	idx="$(printf '%s\n' "${rows[@]}" | menu "ACCENT" -mesg "Current: $cur" -selected-row "$sel")" || return 0
+	[[ $idx =~ ^[0-9]+$ ]] || return 0
+	if ((idx < ${#ACCENTS[@]})); then
+		hex="${ACCENTS[$idx]#*$'\t'}"
+	else
+		text="$(ask "#rrggbb" "Custom accent colour, e.g. #91e611")" || return 0
+		hex="$(normalize_hex "$text")" || { notify "Not a colour: $text (use #rrggbb)"; return 0; }
+	fi
+	set_setting accent "$hex"
+	apply
+}
+
+menu_keybinds() {
+	local ids=() keys=() labels=() defs=() rows=()
+	local id k label def group idx text combo owner
+	if [[ ! -s $binds_tsv ]]; then
+		notify "No keybind list yet ($binds_tsv). Reload Hyprland first."
+		return 0
+	fi
+	while IFS=$'\t' read -r id k label def group; do
+		[[ -n $id ]] || continue
+		ids+=("$id") keys+=("$k") labels+=("${label:-$id}") defs+=("$def")
+		rows+=("$(printf '%-34s %s' "${label:-$id}" "$k")")
+	done <"$binds_tsv"
+	idx="$(printf '%s\n' "${rows[@]}" | menu "KEYBINDS")" || return 0
+	[[ $idx =~ ^[0-9]+$ ]] || return 0
+	text="$(ask "${labels[$idx]}" "Now: ${keys[$idx]}  (default: ${defs[$idx]}). Type e.g. SUPER + D, or default")" || return 0
+	text="${text#"${text%%[![:space:]]*}"}"
+	text="${text%"${text##*[![:space:]]}"}"
+	[[ -n $text ]] || return 0
+	if [[ ${text,,} == default ]]; then
+		reset_keybind "${ids[$idx]}"
+		combo="${defs[$idx]}"
+	else
+		combo="$(normalize_combo "$text")" || {
+			notify "Not a key combo: $text (e.g. SUPER + SHIFT + D)"
+			return 0
+		}
+		set_keybind "${ids[$idx]}" "$combo"
+	fi
+	owner="$(combo_owner "$(normalize_combo "$combo" 2>/dev/null || echo "$combo")" "${ids[$idx]}")"
+	[[ -n $owner ]] && notify "$combo is also used by: $owner"
+	hyprctl reload >/dev/null 2>&1 || true
+}
+
+menu_bar() {
+	local sel=0 idx i k v clock rows
+	while :; do
+		rows=()
+		for i in "${!BAR_KEYS[@]}"; do
+			v="$(get_setting "${BAR_KEYS[$i]}" on)"
+			[[ $v == off ]] || v=on
+			rows+=("$(printf '%-10s %s' "${BAR_LABELS[$i]}" "$v")")
+		done
+		clock="$(get_setting clock 24h)"
+		[[ $clock == 12h ]] || clock=24h
+		rows+=("$(printf '%-10s %s' Clock "$clock")")
+		idx="$(printf '%s\n' "${rows[@]}" | menu "TOP BAR" -mesg "Pick a row to toggle it" -selected-row "$sel")" || return 0
+		[[ $idx =~ ^[0-9]+$ ]] || return 0
+		if ((idx < ${#BAR_KEYS[@]})); then
+			k="${BAR_KEYS[$idx]}"
+			v="$(get_setting "$k" on)"
+			if [[ $v == off ]]; then set_setting "$k" on; else set_setting "$k" off; fi
+		else
+			if [[ $clock == 24h ]]; then set_setting clock 12h; else set_setting clock 24h; fi
+		fi
+		apply
+		sel=$idx
+	done
+}
+
+menu_monitors() {
+	local lines=() names=() rows=() idx main above i n
+	mapfile -t lines < <(tool hyprd3mon-monitors 2>/dev/null)
+	for i in "${!lines[@]}"; do
+		n="${lines[$i]%%$'\t'*}"
+		[[ -n $n ]] || continue
+		names+=("$n")
+		rows+=("${lines[$i]//$'\t'/   }")
+	done
+	idx="$(printf '%s\n' "Single screen (auto)" "${rows[@]}" | menu "MAIN SCREEN" -mesg "Pick the main screen, or Single")" || return 0
+	[[ $idx =~ ^[0-9]+$ ]] || return 0
+	if ((idx == 0)); then
+		tool hyprd3mon-monitors single >/dev/null && notify "Monitors: single screen"
+		return 0
+	fi
+	main="${names[$((idx - 1))]}"
+	local others=() orows=()
+	for i in "${!names[@]}"; do
+		[[ ${names[$i]} == "$main" ]] && continue
+		others+=("${names[$i]}") orows+=("${rows[$i]}")
+	done
+	if ((${#others[@]} == 0)); then
+		notify "Only one screen connected; nothing to stack above $main."
+		return 0
+	fi
+	idx="$(printf '%s\n' "${orows[@]}" | menu "ABOVE" -mesg "Screen above $main")" || return 0
+	[[ $idx =~ ^[0-9]+$ ]] || return 0
+	above="${others[$idx]}"
+	if tool hyprd3mon-monitors "$main" "$above" >/dev/null; then
+		notify "Monitors: $main main, $above above"
+	else
+		notify "Could not set monitors ($main, $above)"
+	fi
+}
+
+open_folder() {
+	mkdir -p "$conf_dir"
+	setsid -f nautilus "$conf_dir" >/dev/null 2>&1
+}
+
+main() {
+	local idx
+	idx="$(printf '%s\n' "Theme" "Accent colour" "Keybinds" "Top bar" "Monitors" "Open config folder" |
+		menu "SETTINGS")" || return 0
+	case $idx in
+	0) menu_theme ;;
+	1) menu_accent ;;
+	2) menu_keybinds ;;
+	3) menu_bar ;;
+	4) menu_monitors ;;
+	5) open_folder ;;
+	esac
+}
+
+usage() {
+	echo "Usage: $(basename "$0") [theme|accent|keybinds|bar|monitors]" >&2
+}
+
+# Sourced (tests): functions only.
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
+
+page=""
+case "${1:-}" in
+"") ;;
+theme | accent | keybinds | bar | monitors) page=$1 ;;
+-h | --help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+*) usage; exit 2 ;;
+esac
+
+if [[ -z $page ]]; then
+	# Toggle: the gear pressed again closes the open menu.
+	if pgrep -x rofi >/dev/null 2>&1; then
+		pkill -x rofi
+		exit 0
+	fi
+	main
+else
+	# Direct entry (e.g. from the help menu): replace any open rofi.
+	if pgrep -x rofi >/dev/null 2>&1; then
+		pkill -x rofi
+		for _ in {1..20}; do pgrep -x rofi >/dev/null 2>&1 || break; sleep 0.05; done
+	fi
+	"menu_$page"
+fi
+exit 0

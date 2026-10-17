@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# hyprd3mon-monitors: set the stacked two-screen layout.
+#   hyprd3mon-monitors                 list connected screens
+#   hyprd3mon-monitors MAIN ABOVE      MAIN in front, ABOVE on top of it
+#   hyprd3mon-monitors single          one screen / laptop (auto)
+# Edits ~/.config/hypr/monitors.lua; Hyprland reloads it on save.
+set -euo pipefail
+
+file="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/monitors.lua"
+
+list() {
+	hyprctl monitors -j | jq -r '.[] | "\(.name)\t\(.width)x\(.height)@\(.refreshRate|floor)\t\(.description)"'
+}
+
+set_names() {
+	[[ -f $file ]] || { echo "Missing $file (run install.sh first)" >&2; exit 1; }
+	sed -i -E \
+		-e "s|^local main  = .*|local main  = $1|" \
+		-e "s|^local above = .*|local above = $2|" "$file"
+	echo "Wrote $file"
+}
+
+case "${1:-}" in
+"")     list ;;
+single) set_names "nil" "nil" ;;
+-h | --help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//' ;;
+*)
+	[[ $# -eq 2 ]] || { echo "Usage: $(basename "$0") [MAIN ABOVE | single]" >&2; exit 2; }
+	for m in "$1" "$2"; do
+		[[ $m =~ ^[A-Za-z0-9-]+$ ]] || { echo "Bad monitor name: $m" >&2; exit 2; }
+	done
+	set_names "\"$1\"" "\"$2\""
+	;;
+esac

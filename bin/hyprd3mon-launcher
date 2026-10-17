@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# hyprd3mon-launcher: centred rofi app launcher (d3mon glass theme).
+# Toggle: if rofi is already open (launcher or power menu), close it.
+set -u
+
+if pgrep -x rofi >/dev/null 2>&1; then
+    pkill -x rofi
+    exit 0
+fi
+
+theme="${XDG_CONFIG_HOME:-$HOME/.config}/rofi/launcher.rasi"
+args=(-show drun)
+[[ -f $theme ]] && args+=(-theme "$theme")
+# Icon theme follows the dark/light setting (set by apply-settings).
+icons=$(gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null | tr -d "'")
+[[ -n $icons ]] && args+=(-icon-theme "$icons")
+
+exec rofi "${args[@]}"

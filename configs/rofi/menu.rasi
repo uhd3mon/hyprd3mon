@@ -1,0 +1,133 @@
+/* hyprd3mon generic list menu (settings, help, pickers).
+   Centred dark glass, ~520px. Title = -p (UPPERCASE), note = -mesg,
+   filter on the right of the title row. Wider menus pass e.g.
+     -theme-str 'window { width: 640px; }'
+   Rows passed with -a (active) render as quiet group headers. */
+
+configuration {
+    hover-select:    true;
+    me-select-entry: "";
+    me-accept-entry: "MousePrimary";
+}
+
+@import "d3mon.rasi"
+
+window {
+    location:         center;
+    anchor:           center;
+    width:            520px;
+    background-color: @glass;
+    border:           1px;
+    border-color:     @line2;
+    border-radius:    16px;
+}
+
+mainbox {
+    children: [ inputbar, message, listview ];
+    spacing:  0;
+    padding:  0;
+}
+
+inputbar {
+    children:     [ prompt, entry ];
+    spacing:      16px;
+    padding:      16px 20px 14px;
+    border:       0 0 1px 0;
+    border-color: @line;
+}
+
+/* Title: a short uppercase label (callers pass e.g. "SETTINGS"). */
+prompt {
+    font:           "JetBrainsMono Nerd Font Bold 9";
+    text-color:     @dim;
+    vertical-align: 0.5;
+}
+
+entry {
+    placeholder:       "Filter";
+    placeholder-color: @faint;
+    horizontal-align:  1;
+    cursor:            text;
+    vertical-align:    0.5;
+}
+
+message {
+    padding:      12px 20px;
+    border:       0 0 1px 0;
+    border-color: @line;
+}
+
+textbox {
+    text-color: @dim;
+    markup:     true;
+}
+
+listview {
+    lines:        10;
+    columns:      1;
+    fixed-height: false;
+    dynamic:      true;
+    scrollbar:    false;
+    cycle:        true;
+    spacing:      2px;
+    padding:      8px 10px 10px;
+}
+
+element {
+    children:      [ element-icon, element-text ];
+    spacing:       12px;
+    padding:       8px 12px;
+    border:        1px;
+    border-color:  transparent;
+    border-radius: 10px;
+    cursor:        pointer;
+}
+
+element-icon {
+    size:   20px;
+    cursor: inherit;
+}
+
+element normal.normal,
+element alternate.normal {
+    background-color: transparent;
+    text-color:       @ink;
+}
+
+element selected.normal {
+    background-color: @accent-soft;
+    border-color:     @accent;
+    text-color:       @ink;
+}
+
+/* Group headers (-a): small muted labels with air above them. */
+element normal.active,
+element alternate.active,
+element selected.active {
+    background-color: transparent;
+    border-color:     transparent;
+    text-color:       @faint;
+    padding:          12px 12px 4px;
+}
+
+element selected.active {
+    text-color: @dim;
+}
+
+element normal.urgent,
+element alternate.urgent {
+    background-color: transparent;
+    text-color:       @bad;
+}
+
+element selected.urgent {
+    background-color: @bad-soft;
+    border-color:     @bad;
+    text-color:       @bad;
+}
+
+element-text {
+    vertical-align: 0.5;
+    text-color:     inherit;
+    cursor:         inherit;
+}

@@ -1,0 +1,48 @@
+# hyprd3mon mako (1.11): glass notifications, d3mon theme.
+# Hyprland blurs the "notifications" layer, so the fill is translucent.
+# Hyprshot sends its screenshot as the icon: shown as a thumbnail.
+
+font=JetBrainsMono Nerd Font 10.5
+# Colours: dark fallback; mako-theme (included below) overrides them.
+text-color=#eceee9
+background-color=#070707cc
+border-color=#ffffff1c
+border-size=1
+border-radius=12
+progress-color=over #91e611
+
+anchor=top-right
+layer=overlay
+width=380
+height=180
+margin=10,12
+padding=14,16
+max-visible=4
+sort=-time
+
+icons=1
+icon-location=left
+max-icon-size=72
+icon-border-radius=8
+
+markup=1
+# App name: text colour at 60% (fgalpha), so it fits both themes.
+format=<span size="small" fgalpha="60%">%a</span>\n<b>%s</b>\n%b
+default-timeout=5000
+ignore-timeout=0
+history=1
+
+# Theme + accent from settings.conf (background, text, border and
+# progress colours). Must stay in the global section, after the
+# defaults above. Mako stops with an error if this file is missing,
+# so the installer always generates it.
+include=~/.config/hyprd3mon/generated/mako-theme
+
+# Sections cannot use the theme, so they set no theme colours except
+# the critical border: a red that reads on dark and light glass.
+[urgency=critical]
+border-color=#e04a3f
+default-timeout=0
+
+[mode=do-not-disturb]
+invisible=1
