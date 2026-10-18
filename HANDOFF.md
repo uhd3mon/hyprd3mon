@@ -6,8 +6,8 @@ hyprd3mon: one Bash script that turns an Arch install into a
 lightweight Hyprland desktop in the d3mon theme (frosted glass, dark
 or light), with Kitty, Hyprpaper, Hyprlock, Hyprshot, Waybar, Rofi,
 Mako, Nautilus, Firefox, OBS and Steam. See AGENTS.md for rules.
-GitHub: none right now. Kevin deleted uhd3mon/hyprd3mon; it goes
-back up (same name) once it's ready, only with his OK.
+GitHub: https://github.com/uhd3mon/hyprd3mon (public, re-created
+2026-10-18 at Kevin's request; remote `origin`, only `main` pushed).
 Local folder: /home/kevin/Workspace/hyprd3mon.
 
 ## Resumed (2026-10-18)
@@ -18,12 +18,11 @@ Local folder: /home/kevin/Workspace/hyprd3mon.
 - Branches: `main` = hyprd3mon; `wip-vpn` = the cancelled VPN
   work (a stash commit; apply with `git stash apply wip-vpn`);
   `d3mon-kde` = the KDE project, remote `d3mon-kde`
-  (github.com/uhd3mon/d3mon-kde, still public). There is no
-  `origin`, so nothing can be pushed by accident.
-- History rewritten without Claude co-author lines (Kevin's
-  rule); commits carry only his name. The bundle has the originals.
-- README still shows the old clone URL; valid again once the repo
-  is re-created under the same name.
+  (github.com/uhd3mon/d3mon-kde, still public). Never push
+  `wip-vpn` or `d3mon-kde` to `origin`.
+- History rewritten without AI co-author lines (Kevin's rule);
+  commits carry only his name and no attribution trailers. The
+  bundle has the originals.
 
 ## Current state (2026-10-17)
 
@@ -240,4 +239,5 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
 - d3mon-kde 2026-10-17 (commit 8540aba, pushed): layout JS (--layout) is now ONE top bar: kickoff, icontasks with pinned apps (fill=false), spacer, centred clock, spacer, systray. Dock and app menu (File/Edit global menu) removed at Kevin's request. Older notes about "top bar + dock" are stale. (Sora, 2026-10-17)
 - 2026-10-18: back to hyprd3mon. Folder renamed to /home/kevin/Workspace/hyprd3mon, Workspace project renamed hyprd3mon. GitHub uhd3mon/hyprd3mon was deleted by Kevin; re-create + push only when he says it's ready. Local git: main = hyprd3mon (restored from ~/.local/share/hyprd3mon-archive/hyprd3mon.bundle, history rewritten without Claude co-author lines, head 7e19f2e), wip-vpn = cancelled VPN stash commit, d3mon-kde = the KDE project branch (remote named d3mon-kde, no origin). Notes about d3mon-kde being this folder's project are stale. (Sora, 2026-10-18)
 - hyprd3mon 2026-10-18 (commit 332c4ce, local, no remote): frosted glass = focused window opaque 1.0, unfocused 0.78 + blur (size 10, noise 0.04, brightness 0.9); waybar bg = new palette key bar_glass (45% alpha, apply-settings falls back to glass); kitty background_opacity 1.0 and kitty-glass override rule removed. Not yet seen in real Hyprland. (Sora, 2026-10-18)
+- hyprd3mon 2026-10-18 (commit a8632f1, local): Kevin chose the stronger frost from the mock: unfocused windows inactive_opacity 0.55, blur size 5 (noise 0.04, brightness 0.9 unchanged). Older note saying 0.78 / size 10 is stale. Not yet seen in real Hyprland. (Sora, 2026-10-18)
 <!-- workspace:memory:end -->
