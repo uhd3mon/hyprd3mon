@@ -50,7 +50,7 @@ WORD_KEYS=(gtk_scheme gtk_theme icon_theme wallpaper hypr_inactive_border)
 UI_KEYS=(bg panel panel2 raise glass glass_strong line line2
 	ink ink2 dim faint bad warn shadow)
 # Optional palette colours, exported too when present.
-EXTRA_KEYS=(bg2 hover ok bad_soft)
+EXTRA_KEYS=(bg2 hover ok bad_soft bar_glass)
 OLD_FILES=(accent.css accent.rasi hyprlock-accent.conf kitty-accent.conf mako-accent)
 
 warn() { printf 'hyprd3mon-apply-settings: %s\n' "$*" >&2; }
@@ -187,6 +187,8 @@ load_theme() {
 			unset "P[$k]"
 		}
 	done
+	# The bar's stylesheet needs @bar_glass; older palettes fall back to glass.
+	[[ -n ${P[bar_glass]:-} ]] || P[bar_glass]="${P[glass]}"
 	for k in accent_ink_default cal_months cal_weekdays cal_days; do
 		[[ -z ${P[$k]:-} || ${P[$k]} =~ ^#[0-9A-Fa-f]{6}$ ]] || {
 			warn "palette '$k' is not #rrggbb; skipped"

@@ -40,8 +40,9 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
   monitors.lua/settings.conf/keybinds.conf, sets Nautilus as the
   folder handler via xdg-mime, then runs
   `hyprd3mon-apply-settings --no-reload`.
-- `configs/hypr/hyprland.lua` (Hyprland 0.56 Lua API): glass
-  decoration, blur on waybar/rofi/notifications layers, Steam
+- `configs/hypr/hyprland.lua` (Hyprland 0.56 Lua API): focused
+  window solid (1.0), unfocused windows frosted (0.78 + blur size
+  10, noise 0.04), blur on waybar/rofi/notifications layers, Steam
   windows float (games opaque), file dialogs float. Keybinds are a
   table: defaults + `~/.config/hyprd3mon/keybinds.conf` overrides
   (`none` unbinds), exported to `~/.cache/hyprd3mon/keybinds.tsv`
@@ -61,7 +62,9 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
   symlink + gsettings. Runs at every Hyprland login too.
 - Bar (Waybar): full width, flush top. Username (opens launcher),
   taskbar | clock + date | network, sound, help, settings, tray,
-  power. Module toggles + 12/24h clock from settings.
+  power. Module toggles + 12/24h clock from settings. Background =
+  palette `bar_glass` (45% alpha; falls back to `glass`), thinner
+  than menus so the blur shows.
 - Commands in `bin/`: launcher, network (rofi Wi-Fi/VPN menu),
   power (lock/logout/restart/shutdown), shot (window/region/monitor/all; always saved to
   ~/Pictures/Screenshots and copied as image/png), help (keybind
@@ -90,6 +93,13 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
 
 ## Decisions
 
+- Frosted glass (Kevin, 2026-10-18: "bar blurred, unfocused
+  windows frosted"): focused window opaque, every unfocused window
+  0.78 + blur. Kitty no longer has its own background_opacity or
+  an opacity override; it follows the same rule (unfocused text
+  fades with the window). To make focused windows glassy too, set
+  `active_opacity` below 1.0.
+
 - Hyprland 0.56 config is Lua (`hyprland.lua` wins over the old
   `hyprland.conf`, which is left in place). Hyprlock/hyprpaper
   stay hyprlang.
@@ -102,6 +112,11 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
   said private, his last said "make sure the github is public").
 
 ## Lessons
+
+- Blur was already on (layer rules + decoration), but over the
+  near-black grid wallpaper a 78%-opaque bar and 92%/85% windows
+  showed almost nothing. Frost needs lower alpha and blur grain
+  (noise); a busier wallpaper would show it more.
 
 - Hyprland `require()` resolves next to hyprland.lua; a missing
   module is catchable with pcall (no error banner).
@@ -145,6 +160,18 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
   in /proc/*/cmdline (same as most rofi Wi-Fi menus). Accepted for
   a single-user desktop; `nmcli --ask` via stdin or `passwd-file`
   would hide it but couldn't be tested without joining a network.
+
+## Verification observed (2026-10-18, frosted glass)
+
+- `bash -n install.sh bin/*`, `luac -p configs/hypr/*.lua`: OK;
+  dry run exit 0. Fake HOME `--apply --skip-packages`: exit 0;
+  theme.css has `bar_glass rgba(22,22,25,0.45)` (dark) and
+  `rgba(250,250,247,0.45)` (light); with bar_glass deleted from the
+  installed palettes it falls back to glass (0.72). kitty.conf
+  `background_opacity 1.0`. GTK3 CssProvider parses the installed
+  waybar style.css with no errors. hyprland.lua under a Lua stub:
+  active 1.0, inactive 0.78, noise 0.04, no kitty-glass rule,
+  3 blur layer rules. Not seen in real Hyprland.
 
 ## Verification observed (2026-10-17)
 

@@ -118,11 +118,11 @@ hl.config({
         rounding       = 14,
         rounding_power = 2,
 
-        -- Frosted glass: every window is slightly see-through and the
-        -- blur behind it softens the wallpaper. Kitty brings its own
-        -- background opacity (see the kitty rule below).
-        active_opacity     = 0.92,
-        inactive_opacity   = 0.85,
+        -- Frosted glass on unfocused windows: the focused window is
+        -- solid and readable, every other window turns see-through and
+        -- the blur behind it frosts the wallpaper.
+        active_opacity     = 1.0,
+        inactive_opacity   = 0.78,
         fullscreen_opacity = 1.0,
 
         shadow = {
@@ -134,11 +134,13 @@ hl.config({
 
         blur = {
             enabled           = true,
-            size              = 8,
+            -- Wide blur plus visible grain: the grain is what makes the
+            -- glass read as frosted over the near-plain grid wallpaper.
+            size              = 10,
             passes            = 3,
-            noise             = 0.02,
-            contrast          = 0.9,
-            brightness        = 0.8,
+            noise             = 0.04,
+            contrast          = 1.0,
+            brightness        = 0.9,
             vibrancy          = 0.2,
             new_optimizations = true,
             popups            = true,
@@ -333,13 +335,6 @@ hl.window_rule({
         pin        = false,
     },
     no_focus = true,
-})
-
--- Kitty draws its own translucent background; keep its text crisp.
-hl.window_rule({
-    name    = "kitty-glass",
-    match   = { class = "^(kitty)$" },
-    opacity = "1.0 override 1.0 override",
 })
 
 -- Steam: the client and all its windows (friends, chat, settings...)

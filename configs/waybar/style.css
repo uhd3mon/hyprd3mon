@@ -3,7 +3,7 @@
    palette + accent). GTK CSS has no optional import: if this file is
    missing, the whole stylesheet fails to load, so the installer always
    generates it. It defines @bg @panel @panel2 @raise @glass
-   @glass_strong @hover @line @line2 @ink @ink2 @dim @faint @bad @warn
+   @bar_glass @glass_strong @hover @line @line2 @ink @ink2 @dim @faint @bad @warn
    @shadow @accent @accent_ink @accent_soft. */
 @import url("../hyprd3mon/generated/theme.css");
 
@@ -19,7 +19,7 @@
 
 /* One flat strip; Hyprland blurs the "waybar" layer behind it. */
 window#waybar {
-  background: @glass;
+  background: @bar_glass;
   border-bottom: 1px solid @line;
   color: @ink;
 }
