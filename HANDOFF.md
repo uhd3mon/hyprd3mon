@@ -6,7 +6,24 @@ hyprd3mon: one Bash script that turns an Arch install into a
 lightweight Hyprland desktop in the d3mon theme (frosted glass, dark
 or light), with Kitty, Hyprpaper, Hyprlock, Hyprshot, Waybar, Rofi,
 Mako, Nautilus, Firefox, OBS and Steam. See AGENTS.md for rules.
-Public GitHub repo: https://github.com/uhd3mon/hyprd3mon (branch main).
+GitHub: none right now. Kevin deleted uhd3mon/hyprd3mon; it goes
+back up (same name) once it's ready, only with his OK.
+Local folder: /home/kevin/Workspace/hyprd3mon.
+
+## Resumed (2026-10-18)
+
+- 2026-10-17 the project briefly became d3mon-kde (KDE theme). On
+  2026-10-18 Kevin moved back to hyprd3mon. History restored from
+  `~/.local/share/hyprd3mon-archive/hyprd3mon.bundle` (kept).
+- Branches: `main` = hyprd3mon; `wip-vpn` = the cancelled VPN
+  work (a stash commit; apply with `git stash apply wip-vpn`);
+  `d3mon-kde` = the KDE project, remote `d3mon-kde`
+  (github.com/uhd3mon/d3mon-kde, still public). There is no
+  `origin`, so nothing can be pushed by accident.
+- History rewritten without Claude co-author lines (Kevin's
+  rule); commits carry only his name. The bundle has the originals.
+- README still shows the old clone URL; valid again once the repo
+  is re-created under the same name.
 
 ## Current state (2026-10-17)
 
@@ -58,6 +75,9 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
 
 ## Next steps
 
+0. When Kevin says it's ready: `gh repo create uhd3mon/hyprd3mon`
+   and push `main` (his OK first). Decide on `wip-vpn` (VPN
+   section beside the network module, request #6).
 1. Kevin: `git clone` + `./install.sh` (dry run), then
    `./install.sh --apply` on the laptop; log in to Hyprland.
 2. On first login check: hyprctl's config errors banner, blur on bar
