@@ -41,8 +41,8 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
   folder handler via xdg-mime, then runs
   `hyprd3mon-apply-settings --no-reload`.
 - `configs/hypr/hyprland.lua` (Hyprland 0.56 Lua API): focused
-  window solid (1.0), unfocused windows frosted (0.78 + blur size
-  10, noise 0.04), blur on waybar/rofi/notifications layers, Steam
+  window solid (1.0), unfocused windows frosted (0.55 + blur size
+  5, noise 0.04), blur on waybar/rofi/notifications layers, Steam
   windows float (games opaque), file dialogs float. Keybinds are a
   table: defaults + `~/.config/hyprd3mon/keybinds.conf` overrides
   (`none` unbinds), exported to `~/.cache/hyprd3mon/keybinds.tsv`
@@ -95,7 +95,9 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
 
 - Frosted glass (Kevin, 2026-10-18: "bar blurred, unfocused
   windows frosted"): focused window opaque, every unfocused window
-  0.78 + blur. Kitty no longer has its own background_opacity or
+  0.55 + light blur (size 5). Kevin picked this stronger frost
+  from a browser mock on 2026-10-18 (0.78 + size 10 hid everything
+  behind the window). Kitty no longer has its own background_opacity or
   an opacity override; it follows the same rule (unfocused text
   fades with the window). To make focused windows glassy too, set
   `active_opacity` below 1.0.
@@ -160,6 +162,13 @@ call (his laptop: KDE Plasma + Plasma Login Manager, AMD GPUs).
   in /proc/*/cmdline (same as most rofi Wi-Fi menus). Accepted for
   a single-user desktop; `nmcli --ask` via stdin or `passwd-file`
   would hide it but couldn't be tested without joining a network.
+
+## Verification observed (2026-10-18, stronger frost)
+
+- inactive_opacity 0.78 -> 0.55, blur size 10 -> 5 (matches the
+  mock Kevin chose). `luac -p configs/hypr/*.lua`,
+  `bash -n install.sh bin/*` OK; dry run exit 0. Not seen in real
+  Hyprland.
 
 ## Verification observed (2026-10-18, frosted glass)
 

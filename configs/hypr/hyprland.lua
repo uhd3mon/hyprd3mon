@@ -122,7 +122,7 @@ hl.config({
         -- solid and readable, every other window turns see-through and
         -- the blur behind it frosts the wallpaper.
         active_opacity     = 1.0,
-        inactive_opacity   = 0.78,
+        inactive_opacity   = 0.55,
         fullscreen_opacity = 1.0,
 
         shadow = {
@@ -134,9 +134,10 @@ hl.config({
 
         blur = {
             enabled           = true,
-            -- Wide blur plus visible grain: the grain is what makes the
-            -- glass read as frosted over the near-plain grid wallpaper.
-            size              = 10,
+            -- Light blur plus visible grain, so what's behind an
+            -- unfocused window still glows through; the grain is what
+            -- makes the glass read as frosted over the grid wallpaper.
+            size              = 5,
             passes            = 3,
             noise             = 0.04,
             contrast          = 1.0,
